@@ -183,7 +183,7 @@ if __name__ == "__main__":
         s=0.1, a=0.1, c_cohesion=0.7, f_food=1.0, e_enemy=1.0, w_inertia=0.85, # Parâmetros do artigo
         tau_min=0.01, tau_max=4.0, # Parâmetros tau do artigo
         alpha_fitness=ALPHA_FITNESS, beta_fitness=BETA_FITNESS,
-        verbose_fitness=1, # 0 para silenciar Keras na fitness, 1 para debug
+        verbose_fitness=0, # 0 para silenciar Keras na fitness, 1 para debug
         seed=RANDOM_SEED
     )
     Sf_bda, best_fitness_bda, convergence_bda = bda.run()
