@@ -46,7 +46,7 @@ DNN_TRAINING_PARAMS_FINAL = {'epochs': 400, 'batch_size': 256, 'patience': 20} #
 
 # Parâmetros dos Otimizadores
 N_AGENTS_OPTIMIZERS = 10 # População/Partículas
-T_MAX_ITER_OPTIMIZERS = 50 # Iterações (Artigo sugere 100)
+T_MAX_ITER_OPTIMIZERS = 100 # Iterações (Artigo sugere 100)
 
 # Parâmetros Fitness
 ALPHA_FITNESS = 0.99

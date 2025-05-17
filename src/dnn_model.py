@@ -27,7 +27,7 @@ def build_dnn_model(num_selected_features, num_classes=3, jit_compile_dnn=False)
                   loss='sparse_categorical_crossentropy', # Apropriado para rótulos inteiros
                   metrics=['accuracy'], jit_compile=jit_compile_dnn)
 
-    model.summary()
+    ##model.summary()
     return model
 
 if __name__ == '__main__':
@@ -36,7 +36,7 @@ if __name__ == '__main__':
     try:
         dnn_model_exemplo = build_dnn_model(num_features_exemplo)
         print(f"\nModelo DNN criado com {num_features_exemplo} features de entrada:")
-        dnn_model_exemplo.summary()
+        #dnn_model_exemplo.summary()
 
         # Teste com 0 features
         # build_dnn_model(0) # Deve levantar ValueError

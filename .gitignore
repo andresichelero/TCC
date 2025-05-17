@@ -172,4 +172,7 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
-src/__pycache__/
+
+# Pycache specific files
+__pycache__/
+*.py[cod]
