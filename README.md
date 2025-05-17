@@ -324,7 +324,7 @@ Based on implementation PDF and common values:
 * The particle position update uses a Sigmoid transfer function applied to the velocity to determine the probability of the bit being 1.
 
 ### Fitness Function (Common to both)
-* $Fitness = \alpha \cdot \text{errorRate} + \beta \cdot (\text{numSelectedFeatures} / \text{totalNumFeatures})$
+* $Fitness = \alpha \cdot \text{errorRate} + \beta \cdot (\text{numFeaturesSel} / \text{totalNumFeatures})$
 * $\alpha = 0.99$
 * $\beta = 0.01$
 
