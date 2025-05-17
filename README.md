@@ -18,6 +18,7 @@ Este trabalho é inspirado e busca implementar conceitos apresentados no artigo:
 * Avaliação comparativa das pipelines BDA+DNN e BPSO+DNN em termos de acurácia, sensibilidade, especificidade e F1-score.
 
 ## Estrutura do Projeto
+```
 epilepsy_detection_project/
 |-- data/                  # Diretório para o dataset BONN
 |   |-- Set A/             # Arquivos .txt para EEG Normal
@@ -35,7 +36,8 @@ epilepsy_detection_project/
 |-- results/               # Saída de resultados, modelos salvos, gráficos
 |-- main.py                # Script principal para executar o pipeline completo
 |-- README.md              # Este arquivo
-|-- requirements.txt       # Dependências do Python (sugestão)
+|-- requirements.txt
+```
 
 ## Configuração e Instalação
 
