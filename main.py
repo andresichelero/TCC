@@ -180,11 +180,10 @@ if __name__ == "__main__":
         X_train_feat=X_train_feat, y_train=y_train,
         X_val_feat=X_val_feat, y_val=y_val,
         dnn_params=DNN_TRAINING_PARAMS_FITNESS,
-        # Valores de exemplo para BDA, ajustar conforme necessário
-        s=0.1, a=0.05, c_cohesion=0.6, f_food=1.0, e_enemy=0.8, w_inertia=0.9,
-        tau_min=1.0, tau_max=6.0, # Parâmetros para V-shaped
+        s=0.1, a=0.1, c_cohesion=0.7, f_food=1.0, e_enemy=1.0, w_inertia=0.85, # Parâmetros do artigo
+        tau_min=0.01, tau_max=4.0, # Parâmetros tau do artigo
         alpha_fitness=ALPHA_FITNESS, beta_fitness=BETA_FITNESS,
-        verbose_fitness=0, # 0 para silenciar Keras na fitness, 1 para debug
+        verbose_fitness=1, # 0 para silenciar Keras na fitness, 1 para debug
         seed=RANDOM_SEED
     )
     Sf_bda, best_fitness_bda, convergence_bda = bda.run()
