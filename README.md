@@ -1,3 +1,5 @@
+[To read in English, click here](#english-version)
+
 # Detecção de Crises Epilépticas Baseada em EEG usando BDFA/BPSO e DNN
 
 Este projeto implementa e avalia pipelines para a detecção automática de crises epilépticas a partir de sinais de Eletroencefalograma (EEG). Ele utiliza a Transformada Wavelet Estacionária (SWT) para extração de características, algoritmos de otimização meta-heurísticos binários - Binary Dragonfly Algorithm (BDA) e Binary Particle Swarm Optimization (BPSO) - para seleção de características, e uma Rede Neural Profunda (DNN) para classificação. O objetivo é classificar os sinais de EEG em três categorias: Normal, Interictal (entre crises) e Ictal (durante a crise), utilizando o dataset público da Universidade de Bonn.
@@ -50,7 +52,7 @@ epilepsy_detection_project/
 
 1.  **Clonar o Repositório (se aplicável):**
     ```bash
-    git clone https://github.com/andresichelero/TCC.git
+    git clone [https://github.com/andresichelero/TCC.git](https://github.com/andresichelero/TCC.git)
     cd epilepsy_detection_project
     ```
 
@@ -163,3 +165,173 @@ Baseado no PDF de implementação e valores comuns:
 * **Testar com Outros Datasets de EEG.**
 * **Comparar com Outras Meta-heurísticas de Seleção de Características.**
 * **Utilizar Arquiteturas de DNN Mais Avançadas:** Como Redes Neurais Convolucionais (CNNs) ou Redes Neurais Recorrentes (RNNs/LSTMs), que podem ser mais adequadas para dados de série temporal como EEG.
+
+---
+<a id="english-version"></a>
+## English Version
+
+# EEG-Based Epileptic Seizure Detection using BDA/BPSO and DNN
+
+This project implements and evaluates pipelines for the automatic detection of epileptic seizures from Electroencephalogram (EEG) signals. It utilizes the Stationary Wavelet Transform (SWT) for feature extraction, binary meta-heuristic optimization algorithms - Binary Dragonfly Algorithm (BDA) and Binary Particle Swarm Optimization (BPSO) - for feature selection, and a Deep Neural Network (DNN) for classification. The goal is to classify EEG signals into three categories: Normal, Interictal (between seizures), and Ictal (during a seizure), using the public University of Bonn dataset.
+
+This work is inspired by and aims to implement concepts presented in the paper:
+* Yogarajan, G., Alsubaie, N., Rajasekaran, G. et al. EEG-based epileptic seizure detection using binary dragonfly algorithm and deep neural network. *Sci Rep* **13**, 17710 (2023). [https://doi.org/10.1038/s41598-023-44318-w](https://doi.org/10.1038/s41598-023-44318-w)
+
+## Features
+
+* Loading and preprocessing data from the BONN dataset (Sets A, D, E).
+* Signal filtering (Butterworth low-pass 0-40Hz) and Min-Max normalization.
+* Extraction of 9 statistical and Hjorth features from 5 SWT sub-bands (wavelet 'db4', level 4), totaling 45 features.
+    * Features: Mean Absolute Value (MAV), Standard Deviation, Skewness, Kurtosis, RMS Power, Ratio of MAVs (with MAV(cA4) as denominator), Activity, Mobility, and Complexity.
+* Optimized feature selection using:
+    * Binary Dragonfly Algorithm (BDA)
+    * Binary Particle Swarm Optimization (BPSO) (for comparison)
+* Classification of EEG states using a Deep Neural Network (DNN) of the Multilayer Perceptron (MLP) type.
+* Comparative evaluation of BDA+DNN and BPSO+DNN pipelines in terms of accuracy, sensitivity, specificity, and F1-score.
+
+## Project Structure
+```
+epilepsy_detection_project/
+|-- data/                      # Directory for the BONN dataset
+|   |-- Set A/                 # .txt files for Normal EEG
+|   |-- Set D/                 # .txt files for Interictal EEG
+|   |-- Set E/                 # .txt files for Ictal EEG
+|-- src/                       # Source code of the modules
+|   |-- init.py
+|   |-- data_loader.py         # Data loading and preprocessing
+|   |-- feature_extractor.py   # SWT feature extraction
+|   |-- dnn_model.py           # DNN model definition
+|   |-- fitness_function.py    # Unified fitness function for optimizers
+|   |-- bda.py                 # Implementation of the Binary Dragonfly Algorithm
+|   |-- bpso.py                # Implementation of the Binary Particle Swarm Optimization
+|   |-- utils.py               # Utility functions (metrics, plots)
+|-- results/                   # Output of results, saved models, plots
+|-- main.py                    # Main script to run the complete pipeline
+|-- README.md                  # This file
+|-- requirements.txt
+```
+
+## Setup and Installation
+
+### Prerequisites
+* Python 3.10
+* pip
+* Git
+
+### Steps
+
+1.  **Clone the Repository (if applicable):**
+    ```bash
+    git clone [https://github.com/andresichelero/TCC.git](https://github.com/andresichelero/TCC.git)
+    cd epilepsy_detection_project
+    ```
+
+2.  **Create and Activate a Virtual Environment:**
+    ```bash
+    python -m venv venv
+    # On Windows
+    .\venv\Scripts\activate
+    # On macOS/Linux
+    source venv/bin/activate
+    ```
+
+3.  **Install Dependencies:**
+    Create a `requirements.txt` file with the following content (essential packages):
+    ```
+    numpy
+    pandas
+    scipy
+    scikit-learn
+    pywavelets
+    tensorflow>=2.15 # Use a version compatible with your GPU/CUDA
+    matplotlib
+    tqdm
+    ```
+    Then, install the dependencies:
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+4.  **GPU Configuration (Optional, for TensorFlow):**
+    To use an NVIDIA GPU with TensorFlow:
+    * Install the latest NVIDIA drivers.
+    * Install CUDA Toolkit and cuDNN compatible with your TensorFlow version and driver. Refer to the [official TensorFlow documentation on GPU support](https://www.tensorflow.org/install/gpu).
+    The `main.py` script will attempt to use the GPU automatically if configured correctly.
+
+## Usage
+
+The main script `main.py` orchestrates the entire pipeline.
+
+1.  **Configure Parameters (Optional):**
+    You can adjust the main parameters directly in the `main.py` file, such as:
+    * `T_MAX_ITER_OPTIMIZERS`: Number of iterations for BDA and BPSO (100 is recommended as per the paper, but it will take about **1000 min** for a complete round - tested with Ryzen 5600X & RTX 3070).
+    * `N_AGENTS_OPTIMIZERS`: Population size for BDA/BPSO (10, as per the paper).
+    * Specific parameters for BDA and BPSO (as detailed below).
+    * DNN training parameters (epochs, batch size, patience for EarlyStopping).
+    * `RANDOM_SEED` for reproducibility.
+
+2.  **Run the Main Script:**
+    Make sure your virtual environment is activated.
+    ```bash
+    python main.py
+    ```
+
+3.  **What to Expect:**
+    * The script will load the data, preprocess it, and extract the 45 SWT features.
+    * Next, it will run BDA and BPSO to select the optimal feature subsets. The fitness function will train and validate DNN models internally.
+    * After selection, final DNN models will be trained using the feature sets selected by BDA and BPSO.
+    * The final models will be evaluated on the test set.
+    * The console output will show progress, debug logs (if `DEBUG_FEATURES = True` in `feature_extractor.py`), fitness results, and final performance metrics.
+    * A convergence curve for the optimizers will be plotted (if `matplotlib` is configured to work in your environment).
+    * Detailed results and the trained final DNN models will be saved in the `results/` directory.
+
+## Module Descriptions (`src/`)
+
+* `data_loader.py`: Contains functions to load data from the BONN dataset, apply preprocessing (Butterworth filtering, Min-Max normalization), and split the data into training, validation, and test sets.
+* `feature_extractor.py`: Responsible for extracting the 9 statistical and Hjorth features from the 5 sub-bands obtained by the Stationary Wavelet Transform (SWT).
+* `dnn_model.py`: Defines the architecture of the Deep Neural Network (MLP with 3 hidden layers of 10 sigmoid neurons each) and its compilation.
+* `fitness_function.py`: Implements the unified fitness function used by the BDA and BPSO algorithms. This function trains and evaluates the DNN with a subset of features to guide the optimization process.
+* `bda.py`: Implementation of the Binary Dragonfly Algorithm (BDA) for feature selection.
+* `bpso.py`: Implementation of the Binary Particle Swarm Optimization (BPSO) for feature selection.
+* `utils.py`: Utility functions, including calculation of classification metrics (accuracy, specificity, classification report) and plotting convergence curves.
+
+## Optimizer Parameters (As per Paper and Implementation)
+
+### Binary Dragonfly Algorithm (BDA)
+Based on Yogarajan et al. (2023) and the implementation:
+* `population_size (N)`: 10
+* `iterations (T)`: 100 (50 recommended)
+* `s` (separation weight): 0.1
+* `a` (alignment weight): 0.1
+* `c_cohesion` (cohesion weight): 0.7
+* `f_food` (food attraction factor): 1.0
+* `e_enemy` (enemy distraction factor): 1.0
+* `w_inertia` (inertia weight): 0.85 (fixed)
+* `tau_min`: 0.01 (for V-Shaped transfer function)
+* `tau_max`: 4.0 (for V-Shaped transfer function)
+* The dragonfly position update uses a V-Shaped function (e.g., `abs(tanh(Step / tau))`) to determine the probability of flipping a bit.
+* The Separation, Alignment, and Cohesion components are calculated considering the other dragonflies in the population.
+
+### Binary Particle Swarm Optimization (BPSO)
+Based on implementation PDF and common values:
+* `population_size (N)`: 10
+* `iterations (T)`: 100 (50 recommended)
+* `w_max` (maximum inertia): 0.9
+* `w_min` (minimum inertia): 0.4 (inertia weight decreases linearly)
+* `c1` (cognitive coefficient): 2.0
+* `c2` (social coefficient): 2.0
+* `Vmax` (velocity limit): 4.0 (optional, but recommended)
+* The particle position update uses a Sigmoid transfer function applied to the velocity to determine the probability of the bit being 1.
+
+### Fitness Function (Common to both)
+* $Fitness = \alpha \cdot \text{errorRate} + \beta \cdot (\text{numSelectedFeatures} / \text{totalNumFeatures})$
+* $\alpha = 0.99$
+* $\beta = 0.01$
+
+## Possible Improvements and Future Work
+
+* **Hyperparameter Fine-Tuning:** Optimize BDA, BPSO parameters, and DNN architecture/training.
+* **Explore Different Wavelets and SWT Decomposition Levels.**
+* **Test with Other EEG Datasets.**
+* **Compare with Other Feature Selection Metaheuristics.**
+* **Utilize More Advanced DNN Architectures:** Such as Convolutional Neural Networks (CNNs) or Recurrent Neural Networks (RNNs/LSTMs), which may be more suitable for time-series data like EEG.
