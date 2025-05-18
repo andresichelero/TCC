@@ -91,7 +91,7 @@ def preprocess_eeg(data, fs=173.61, lowcut_hz=None, highcut_hz=40.0, order=4):
         print(f"Aplicando filtro passa-baixas com corte em {highcut_hz} Hz.")
     else:
         print("Nenhum filtro aplicado, pois highcut_hz não foi fornecido.")
-        print("##########################SEM FILTRO################################")
+        print("########################## SEM FILTRO - Processamento será invalido! ################################")
         # Se nenhum filtro for aplicado, apenas prossegue para a normalização.
         # No entanto, o artigo especifica um filtro.
         # Para evitar erro se b,a não definidos:

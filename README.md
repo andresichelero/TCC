@@ -143,7 +143,7 @@ Baseado em Yogarajan et al. (2023) e na implementação:
 * Os componentes de Separação, Alinhamento e Coesão são calculados considerando as outras libélulas na população.
 
 ### Binary Particle Swarm Optimization (BPSO)
-Baseado no PDF de implementação e valores comuns:
+Valores comuns:
 * `population_size (N)`: 10
 * `iterations (T)`: 100 (50 recomendado)
 * `w_max` (inércia máxima): 0.9
@@ -313,7 +313,7 @@ Based on Yogarajan et al. (2023) and the implementation:
 * The Separation, Alignment, and Cohesion components are calculated considering the other dragonflies in the population.
 
 ### Binary Particle Swarm Optimization (BPSO)
-Based on implementation PDF and common values:
+Common values:
 * `population_size (N)`: 10
 * `iterations (T)`: 100 (50 recommended)
 * `w_max` (maximum inertia): 0.9

@@ -37,7 +37,7 @@ def calculate_specificity(y_true, y_pred, class_label, num_classes):
         fp = 0
     else: # Caso inesperado ou dados insuficientes
         print(f"Warning: Could not calculate specificity reliably for class {class_label} due to CM shape: {cm_binary.shape}")
-        return np.nan # Ou 0, dependendo de como quer tratar
+        return np.nan
 
     specificity = tn / (tn + fp) if (tn + fp) > 0 else 0.0
     return specificity
@@ -101,19 +101,14 @@ def plot_convergence_curves(curves, labels, title="Curvas de Convergência"):
 
 
 if __name__ == '__main__':
-    # Exemplo de uso para calculate_all_metrics
     y_true_ex = np.array([0, 1, 2, 0, 1, 2, 0, 0, 1, 1, 2, 2, 2])
     y_pred_ex = np.array([0, 1, 1, 0, 2, 2, 0, 1, 1, 0, 2, 2, 2])
     class_names_ex = ["Normal (0)", "Interictal (1)", "Ictal (2)"]
-
     print("--- Testando calculate_all_metrics ---")
     metrics_results = calculate_all_metrics(y_true_ex, y_pred_ex, class_names=class_names_ex)
     print("\nMétricas retornadas (dict):")
     import json
     print(json.dumps(metrics_results, indent=2))
-
-
-    # Exemplo para plot_convergence_curves
     curve1 = np.array([10, 8, 6, 5, 4.5, 4, 3.9])
     curve2 = np.array([12, 10, 7, 6, 5.5, 5, 4.8])
     print("\n--- Testando plot_convergence_curves ---")

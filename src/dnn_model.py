@@ -36,7 +36,7 @@ if __name__ == '__main__':
     try:
         dnn_model_exemplo = build_dnn_model(num_features_exemplo)
         print(f"\nModelo DNN criado com {num_features_exemplo} features de entrada:")
-        #dnn_model_exemplo.summary()
+        dnn_model_exemplo.summary()
 
         # Teste com 0 features
         # build_dnn_model(0) # Deve levantar ValueError

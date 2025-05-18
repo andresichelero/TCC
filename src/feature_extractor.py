@@ -104,10 +104,10 @@ feature_functions_base = {
 }
 
 def apply_swt(signal, wavelet='db4', level=4):
-    # print("############## APPLY SWT (DEBUG USER) ###############")
+    # print("############## APPLY SWT ###############")
     # temp_coeffs = pywt.swt(signal, wavelet, level=level, trim_approx=True)
     # print(temp_coeffs)
-    # print("############## END APPLY SWT (DEBUG USER) ###############")
+    # print("############## END APPLY SWT ###############")
     # return temp_coeffs
     return pywt.swt(signal, wavelet, level=level, trim_approx=True)
 
@@ -184,7 +184,7 @@ def extract_swt_features(eeg_data, wavelet='db4', level=4):
                  for band_name_ph in band_names_ordered:
                     for feat_name_ph_key in feature_functions_base.keys(): feature_names.append(f"{band_name_ph}_{feat_name_ph_key}")
                     feature_names.append(f"{band_name_ph}_MAVsRatio")
-            continue # Pula para o próximo segmento
+            continue
             
         coeffs_A_level_band_arr = sub_bands_coeffs_map.get(f'A{level}')
 
