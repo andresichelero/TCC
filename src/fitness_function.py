@@ -5,15 +5,24 @@ import tensorflow as tf
 from tensorflow.keras.callbacks import EarlyStopping
 try:
     from .dnn_model import build_dnn_model
+    from .utils import plot_dnn_training_history # Para plotar opcionalmente
 except ImportError:
     from dnn_model import build_dnn_model
+    from utils import plot_dnn_training_history
 
+# Contador global para controlar o plot da fitness (apenas para depuração)
+FITNESS_CALL_COUNT = 0
+MAX_FITNESS_PLOTS_PER_RUN = 5 # Quantos históricos de DNN da fitness plotar por execução do otimizador
+
+def reset_fitness_call_count():
+    global FITNESS_CALL_COUNT
+    FITNESS_CALL_COUNT = 0
 
 def evaluate_fitness(binary_feature_vector,
                      X_train_all_features, y_train,
                      X_val_all_features, y_val,
                      dnn_training_params={'epochs': 100, 'batch_size': 32, 'patience': 10},
-                     alpha=0.99, beta=0.01, verbose=0):
+                     alpha=0.99, beta=0.01, verbose=0, optimizer_name="optimizer", current_iter=0, agent_idx=0, plot_this_fitness_dnn_history=False):
     """
     Avalia a aptidão de um subconjunto de características binário.
     Menor valor de fitness é melhor.
@@ -30,6 +39,7 @@ def evaluate_fitness(binary_feature_vector,
     Returns:
         float: Valor de fitness (menor é melhor).
     """
+    global FITNESS_CALL_COUNT
     selected_indices = np.where(binary_feature_vector == 1)[0] # Obter índices
     num_selected = len(selected_indices)
     total_num_features_available = len(binary_feature_vector)
@@ -58,7 +68,7 @@ def evaluate_fitness(binary_feature_vector,
     )
 
     # Treina a DNN
-    history = model.fit(
+    history_obj = model.fit(
         X_train_selected, y_train,
         epochs=dnn_training_params.get('epochs', 100),
         batch_size=dnn_training_params.get('batch_size', 32),
@@ -66,6 +76,14 @@ def evaluate_fitness(binary_feature_vector,
         callbacks=[early_stopping],
         verbose=verbose # 0 para menos output durante treino da fitness
     )
+
+    # Plot opcional do histórico desta DNN específica
+    # Controlado externamente para não plotar todas as vezes
+    if plot_this_fitness_dnn_history and FITNESS_CALL_COUNT < MAX_FITNESS_PLOTS_PER_RUN:
+        plot_title = f"Fitness DNN: {optimizer_name} - Iter {current_iter}, Agente {agent_idx} ({num_selected} feats)"
+        plot_filename = f"fitness_dnn_{optimizer_name}_iter{current_iter}_agent{agent_idx}.png"
+        plot_dnn_training_history(history_obj.history, title=plot_title, filename=plot_filename)
+        FITNESS_CALL_COUNT += 1
 
     # Avalia no conjunto de validação (usando os melhores pesos restaurados pelo EarlyStopping)
     loss, accuracy = model.evaluate(X_val_selected, y_val, verbose=verbose)
@@ -78,7 +96,7 @@ def evaluate_fitness(binary_feature_vector,
 
     # Libera memória do modelo explicitamente
     del model
-    del history
+    del history_obj
 
     return fitness
 

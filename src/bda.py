@@ -5,9 +5,9 @@ import math
 from tqdm import tqdm
 
 try:
-    from .fitness_function import evaluate_fitness
+    from .fitness_function import evaluate_fitness, reset_fitness_call_count
 except ImportError:
-    from fitness_function import evaluate_fitness
+    from fitness_function import evaluate_fitness, reset_fitness_call_count
 
 class BinaryDragonflyAlgorithm:
     def __init__(self, N, T, dim, fitness_func, X_train_feat, y_train, X_val_feat, y_val, dnn_params,
@@ -64,7 +64,9 @@ class BinaryDragonflyAlgorithm:
             self.fitness_values[i] = self.fitness_func(
                 self.positions[i, :], self.X_train_feat, self.y_train,
                 self.X_val_feat, self.y_val, self.dnn_params,
-                self.alpha_fitness, self.beta_fitness, self.verbose_fitness
+                self.alpha_fitness, self.beta_fitness, self.verbose_fitness,
+                optimizer_name="BDA", current_iter=0, agent_idx=i,
+                plot_this_fitness_dnn_history=(i == 0)
             )
             if self.fitness_values[i] < self.food_fitness:
                 self.food_fitness = self.fitness_values[i]
@@ -79,6 +81,7 @@ class BinaryDragonflyAlgorithm:
             print("ALERTA BDA: Nenhuma solução inicial válida encontrada, food_fitness é infinito!")
         print(f"BDA: Melhor fitness inicial (Food): {self.food_fitness:.4f}")
         print(f"BDA: Pior fitness inicial (Enemy): {self.enemy_fitness:.4f}")
+        reset_fitness_call_count()
 
 
     def _v_shaped_transfer_function(self, delta_x_component_scaled):
@@ -106,11 +109,16 @@ class BinaryDragonflyAlgorithm:
         print(f"\nIniciando otimização BDA por {self.T} iterações...")
 
         for t in tqdm(range(self.T), desc="BDA Iterations"):
-            # Atualiza o parâmetro tau (linearmente crescente de tau_min para tau_max)
-            # Isso faz com que 1/tau diminua, reduzindo a prob. de flip no final (favorece explotação)
-            current_tau = self.tau_min + (self.tau_max - self.tau_min) * (t / self.T)
-            if current_tau == 0: current_tau = 1e-6 # Evitar divisão por zero se tau_min e tau_max forem zero
+            # Atualização de Tau conforme artigo (diminui de tau_max para tau_min)
+            current_tau = (1.0 - (t / (self.T -1) if self.T > 1 else 1)) * self.tau_max + (t / (self.T-1) if self.T > 1 else 0) * self.tau_min
+            # OU Manter tau crescente (como estava antes, faz mais sentido para exploração->explotação)
+            #current_tau = self.tau_min + (self.tau_max - self.tau_min) * (t / self.T)
+            current_tau = max(current_tau, 1e-5)
+            
             current_w = self.w_inertia
+
+            # Plotar a primeira DNN desta iteração se for uma iteração de interesse
+            plot_first_agent_in_iter = True #(t % 2 == 0 or t == self.T -1 ) # Ex: a cada 2 iterações e na última
 
             # Atualizar os coeficientes s, a, c, f, e (o artigo não especifica que são dinâmicos, então usamos os valores fixos)
             # Se fossem dinâmicos, seriam atualizados aqui, por exemplo:
@@ -186,7 +194,9 @@ class BinaryDragonflyAlgorithm:
                 current_fitness = self.fitness_func(
                     self.positions[i, :], self.X_train_feat, self.y_train,
                     self.X_val_feat, self.y_val, self.dnn_params,
-                    self.alpha_fitness, self.beta_fitness, self.verbose_fitness
+                    self.alpha_fitness, self.beta_fitness, self.verbose_fitness,
+                    optimizer_name="BDA", current_iter=t+1, agent_idx=i,
+                    plot_this_fitness_dnn_history=(i == 0 and plot_first_agent_in_iter)
                 )
                 self.fitness_values[i] = current_fitness
 
@@ -197,6 +207,8 @@ class BinaryDragonflyAlgorithm:
                 if current_fitness > self.enemy_fitness: # Pior fitness
                     self.enemy_fitness = current_fitness
                     self.enemy_pos = self.positions[i, :].copy()
+            
+            if plot_first_agent_in_iter: reset_fitness_call_count()
             
             self.convergence_curve[t] = self.food_fitness
             if (t + 1) % 10 == 0 or t == self.T - 1: # Log a cada 10 iterações e na última
