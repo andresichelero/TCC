@@ -76,6 +76,7 @@ epilepsy_detection_project/
     tensorflow>=2.15 # Use uma versão compatível com sua GPU/CUDA
     matplotlib
     tqdm
+    seaborn
     ```
     Então, instale as dependências:
     ```bash
