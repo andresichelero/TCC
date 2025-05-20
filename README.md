@@ -125,6 +125,131 @@ O script principal `main.py` orquestra todo o pipeline.
 * `bpso.py`: Implementação do Binary Particle Swarm Optimization (BPSO) para seleção de características.
 * `utils.py`: Funções utilitárias, incluindo cálculo de métricas de classificação (acurácia, especificidade, relatório de classificação) e plotagem de curvas de convergência.
 
+## Pipeline Detalhado
+
+1.  **Configuração Inicial e Definição de Parâmetros (`main.py`)**
+    * Importação das bibliotecas necessárias (numpy, tensorflow, matplotlib, etc.).
+    * Definição de caminhos para diretórios de dados e resultados.
+    * Configuração da semente aleatória (random seed) para reprodutibilidade.
+    * Definição de parâmetros globais para:
+        * Dataset e pré-processamento (frequência de amostragem, frequência de corte do filtro).
+        * Transformada Wavelet Estacionária (SWT) (wavelet mãe, nível de decomposição).
+        * Divisão dos dados (proporções para treino, validação e teste).
+        * Rede Neural Densa (DNN) (parâmetros de treinamento para a função de fitness e para o treino final, como épocas, tamanho do batch, paciência para early stopping).
+        * Algoritmos de Otimização (BDA e BPSO) (número de agentes/partículas, número máximo de iterações).
+        * Função de Fitness (pesos alfa para taxa de erro e beta para número de características).
+
+2.  **Carregamento dos Dados (`data_loader.py`)**
+    * A função `load_bonn_data` é chamada para carregar os segmentos de EEG do dataset de Bonn.
+    * Os dados são lidos de arquivos `.txt` localizados em subpastas correspondentes aos conjuntos A (Normal), D (Interictal) e E (Ictal).
+    * Rótulos numéricos são atribuídos: 0 para Normal, 1 para Interictal e 2 para Ictal.
+    * São retornados os dados brutos e seus respectivos rótulos.
+    * Exemplos de sinais EEG brutos são plotados para visualização inicial (`plot_eeg_segments` de `utils.py`).
+
+3.  **Pré-processamento dos Dados (`data_loader.py`)**
+    * A função `preprocess_eeg` aplica as seguintes etapas aos dados brutos:
+        * Filtragem: Um filtro Butterworth é aplicado (por padrão, um filtro passa-baixas com frequência de corte em 40Hz).
+        * Normalização: Os sinais filtrados são normalizados para o intervalo [-1, 1] usando a normalização Min-Max.
+    * Exemplos de sinais EEG pré-processados são plotados (`plot_eeg_segments` de `utils.py`).
+
+4.  **Divisão dos Dados (`data_loader.py`)**
+    * A função `split_data` divide os dados pré-processados em conjuntos de treinamento, validação e teste.
+    * A divisão é estratificada para garantir que a proporção das classes seja mantida em cada conjunto.
+
+5.  **Extração de Características com SWT (`feature_extractor.py`)**
+    * A função `extract_swt_features` é responsável por extrair características relevantes dos sinais de EEG:
+        * Para cada segmento de EEG, a Transformada Wavelet Estacionária (SWT) é aplicada usando `pywt.swt` (função `apply_swt`).
+        * A partir dos coeficientes de aproximação (A) e detalhe (D) resultantes da SWT, um conjunto de características estatísticas é calculado para cada sub-banda. Essas características incluem:
+            * Valor Médio Absoluto (MAV)
+            * Desvio Padrão (StdDev)
+            * Assimetria (Skewness)
+            * Curtose (Kurtosis)
+            * Valor RMS (Root Mean Square)
+            * Atividade (Variância)
+            * Mobilidade
+            * Complexidade
+            * Razão MAVs (MAVS Ratio): Razão entre o MAV de uma banda de detalhe e o MAV da banda de aproximação do nível mais alto.
+        * Retorna uma matriz contendo as características extraídas para todos os segmentos e os nomes dessas características.
+    * Exemplos dos coeficientes SWT são plotados (`plot_swt_coefficients` de `utils.py`).
+    * A distribuição dos dados (treino, validação, teste) no espaço de características é visualizada usando PCA (`plot_data_distribution_pca` de `utils.py`).
+
+6.  **Seleção de Características via Otimizadores Meta-heurísticos**
+    * O objetivo desta fase é encontrar um subconjunto ótimo de características extraídas que maximize o desempenho da classificação e minimize o número de características utilizadas.
+    * **Função de Fitness (`fitness_function.py`)**:
+        * A função `evaluate_fitness` quantifica a "qualidade" de um subconjunto de características (representado por um vetor binário).
+        * Dado um vetor binário (onde 1 indica uma característica selecionada e 0 uma não selecionada):
+            * Se nenhuma característica for selecionada, um valor de fitness alto (ruim) é retornado.
+            * As características correspondentes são selecionadas dos conjuntos de treino e validação.
+            * Uma nova sessão Keras é criada.
+            * Um modelo DNN é construído (`build_dnn_model` de `dnn_model.py`) usando apenas as características selecionadas. O modelo DNN padrão consiste em camadas densas com ativação sigmoide (ou ReLU, dependendo da configuração), Batch Normalization, Dropout e uma camada de saída softmax. É compilado com o otimizador Adam e a função de perda `sparse_categorical_crossentropy`.
+            * A DNN é treinada com as características de treino selecionadas e validada com as características de validação selecionadas. O `EarlyStopping` é usado para evitar overfitting.
+            * Opcionalmente, o histórico de treinamento da DNN da função de fitness pode ser plotado (`plot_dnn_training_history` de `utils.py`).
+            * A taxa de erro da DNN no conjunto de validação é calculada.
+            * O valor de fitness é uma combinação ponderada da taxa de erro e da razão entre o número de características selecionadas e o número total de características disponíveis (Fitness = $\alpha \times \text{taxaErro} + \beta \times \frac{\text{numCaracteristicasSelecionadas}}{\text{totalCaracteristicas}}$). Um menor valor de fitness indica uma melhor solução.
+    * **Binary Dragonfly Algorithm (BDA) (`bda.py`)**:
+        * A classe `BinaryDragonflyAlgorithm` implementa o algoritmo BDA.
+        * Uma população de "libélulas" (vetores binários de características) é inicializada.
+        * O fitness inicial de cada libélula é calculado usando `evaluate_fitness`.
+        * As melhores ("food") e piores ("enemy") soluções iniciais são identificadas.
+        * Iterativamente, as posições das libélulas são atualizadas com base em cinco comportamentos primários: Separação, Alinhamento, Coesão, Atração pela Comida e Distração do Inimigo.
+        * Os vetores de passo (`Delta_X`) são atualizados, e subsequentemente as posições binárias são atualizadas usando uma função de transferência em forma de V e uma regra de probabilidade baseada em `Delta_X` e um parâmetro `tau` (que decresce linearmente ao longo das iterações).
+        * O fitness das novas posições é avaliado, e as posições "food" e "enemy" são atualizadas.
+        * A melhor aptidão em cada iteração é armazenada para gerar uma curva de convergência.
+        * Ao final, o BDA retorna o melhor vetor de características encontrado (`Sf_bda`), seu fitness e a curva de convergência.
+    * **Binary Particle Swarm Optimization (BPSO) (`bpso.py`)**:
+        * A classe `BinaryPSO` implementa o algoritmo BPSO.
+        * Uma população de "partículas" (vetores binários de características) com velocidades associadas é inicializada.
+        * O fitness inicial de cada partícula é calculado.
+        * As melhores posições pessoais (`pbest`) e a melhor posição global (`gbest`) são inicializadas.
+        * Iterativamente, as velocidades e posições das partículas são atualizadas:
+            * A atualização da velocidade considera um peso de inércia (`w` - que decresce linearmente), um componente cognitivo (atração ao `pbest`) e um componente social (atração ao `gbest`). As velocidades são limitadas (clipadas).
+            * As posições binárias são atualizadas com base nas velocidades usando uma função de transferência sigmoide e uma regra de probabilidade.
+            * O fitness das novas posições é avaliado, e `pbest` e `gbest` são atualizados.
+            * A melhor aptidão global em cada iteração é armazenada para a curva de convergência.
+        * Ao final, o BPSO retorna o melhor vetor de características encontrado (`Sf_bpso`), seu fitness e a curva de convergência.
+    * As curvas de convergência do BDA e BPSO são plotadas (`plot_convergence_curves` de `utils.py`).
+
+7.  **Treinamento e Avaliação Final do Modelo (`main.py`)**
+    * A função `train_and_evaluate_final_model` é executada separadamente para os conjuntos de características selecionados pelo BDA e pelo BPSO.
+    * Os dados de treinamento e validação originais (após extração de características) são combinados para formar um conjunto de treinamento completo (`X_train_full_feat`, `y_train_full`).
+    * Para um dado vetor de características selecionadas (ex: `Sf_bda`):
+        * As características correspondentes são selecionadas de `X_train_full_feat` e do conjunto de teste `X_test_feat`.
+        * Se nenhuma característica for selecionada, o processo é abortado para esse otimizador.
+        * Uma nova sessão Keras é criada.
+        * Um novo modelo DNN é construído (`build_dnn_model`) usando o número de características selecionadas e parâmetros de treinamento mais robustos (definidos em `DNN_TRAINING_PARAMS_FINAL`).
+        * O modelo final é treinado no `X_train_full_selected` e `y_train_full`. O `EarlyStopping` é usado com uma fração dos dados de treino (`validation_split`) para validação interna durante o treino final.
+        * O histórico de treinamento do modelo final é plotado (`plot_dnn_training_history` de `utils.py`).
+        * O modelo treinado é avaliado no conjunto de teste (`X_test_selected`, `y_test`).
+        * Diversas métricas de desempenho são calculadas usando `calculate_all_metrics` (de `utils.py`), incluindo:
+            * Acurácia
+            * Relatório de classificação (precisão, recall, F1-score por classe, médias macro/ponderada)
+            * Matriz de confusão
+            * Especificidade por classe (calculada por `calculate_specificity` dentro de `calculate_all_metrics`).
+        * O modelo Keras treinado é salvo em disco.
+        * As métricas e o histórico de treinamento são retornados.
+
+8.  **Consolidação e Apresentação dos Resultados (`main.py`)**
+    * Todos os resultados da otimização (melhor fitness, vetor de características selecionado, curva de convergência) e da avaliação final (métricas no conjunto de teste) para BDA+DNN e BPSO+DNN são salvos em um arquivo JSON (`all_pipeline_results.json`).
+    * Uma tabela comparativa é exibida no console, mostrando as principais métricas de desempenho (número de características, acurácia, sensibilidade por classe, especificidade por classe, F1-score macro) para os modelos BDA+DNN e BPSO+DNN no conjunto de teste.
+    * Gráficos de barras comparativos finais são gerados (`plot_final_metrics_comparison_bars` de `utils.py`) para visualizar:
+        * Acurácia Geral e F1-Score Macro.
+        * Recall (Sensibilidade) por Classe.
+        * Número de Características Selecionadas.
+    * O tempo total de execução do pipeline é exibido.
+
+## Funções Utilitárias (`utils.py`)
+
+O módulo `utils.py` contém diversas funções auxiliares para cálculo de métricas e plotagem, incluindo:
+* `calculate_specificity`: Calcula a especificidade para uma classe.
+* `calculate_all_metrics`: Calcula um conjunto completo de métricas de classificação.
+* `_handle_plot`: Função interna para salvar ou exibir plots.
+* `plot_eeg_segments`: Plota segmentos de EEG e seus espectros.
+* `plot_swt_coefficients`: Plota os coeficientes da SWT.
+* `plot_dnn_training_history`: Plota o histórico de treinamento da DNN.
+* `plot_convergence_curves`: Plota as curvas de convergência dos otimizadores.
+* `plot_data_distribution_pca`: Plota a distribuição dos dados usando PCA.
+* `plot_final_metrics_comparison_bars`: Gera gráficos de barras para comparar as métricas finais dos modelos.
+
 ## Parâmetros dos Otimizadores (Conforme Artigo e Implementação)
 
 ### Binary Dragonfly Algorithm (BDA)

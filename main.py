@@ -5,26 +5,42 @@ import time
 import tensorflow as tf
 import json
 import sys
+import matplotlib.pyplot as plt
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(current_dir, 'src'))
 
 from src.data_loader import load_bonn_data, preprocess_eeg, split_data
-from src.feature_extractor import extract_swt_features
+from src.feature_extractor import extract_swt_features, apply_swt
 from src.dnn_model import build_dnn_model
-from src.fitness_function import evaluate_fitness
+from src.fitness_function import evaluate_fitness, reset_fitness_call_count
 from src.bda import BinaryDragonflyAlgorithm
 from src.bpso import BinaryPSO
-from src.utils import calculate_all_metrics, plot_convergence_curves
+from src.utils import (calculate_all_metrics, plot_convergence_curves, plot_data_distribution_pca,
+                       plot_eeg_segments, plot_swt_coefficients, plot_dnn_training_history,
+                       plot_final_metrics_comparison_bars)
+import src.utils as utils_module
 
 # --- Configurações Globais ---
 BASE_DATA_DIR = os.path.join(current_dir, 'data')
 RESULTS_DIR = os.path.join(current_dir, 'results')
+PLOTS_DIR_MAIN = os.path.join(RESULTS_DIR, 'plots')
+os.makedirs(PLOTS_DIR_MAIN, exist_ok=True)
 os.makedirs(RESULTS_DIR, exist_ok=True)
 
 RANDOM_SEED = 42
 np.random.seed(RANDOM_SEED)
 tf.random.set_seed(RANDOM_SEED)
+
+# --- Configurações Globais de Plot ---
+try:
+    SAVE_PLOTS_DEFAULT = True # False - Padrão para mostrar grafcos
+except Exception as e:
+    print(f"Aviso: Não foi possível configurar backend do Matplotlib: {e}", flush=True)
+    SAVE_PLOTS_DEFAULT = True
+
+utils_module.SAVE_PLOTS = True # <<<<<< Mude para False para ver plots interativamente
+utils_module.PLOTS_DIR = PLOTS_DIR_MAIN
 
 # Parâmetros do Dataset e Pré-processamento
 FS = 173.61
@@ -38,15 +54,13 @@ TEST_SIZE = 0.15
 VAL_SIZE = 0.15 # Usado dentro da função de fitness e para otimização
 
 # Parâmetros da DNN para Fitness e Treino Final
-DNN_TRAINING_PARAMS_FITNESS = {'epochs': 200, 'batch_size': 128, 'patience': 15} # Para fitness (mais rápido)
-DNN_TRAINING_PARAMS_FINAL = {'epochs': 400, 'batch_size': 256, 'patience': 20} # Para treino final (mais robusto)
-# Se patience do final for usado com EarlyStopping, separar uma pequena porção do X_train_full para validação interna do treino final.
-# Ou treinar por um número fixo de épocas no conjunto treino+validação. O artigo menciona ambas.
+DNN_TRAINING_PARAMS_FITNESS = {'epochs': 120, 'batch_size': 64, 'patience': 25} # Para fitness (mais rápido)
+DNN_TRAINING_PARAMS_FINAL = {'epochs': 250, 'batch_size': 128, 'patience': 30} # Para treino final (mais robusto)
 # Foi usado EarlyStopping com val_split para o treino final.
 
 # Parâmetros dos Otimizadores
-N_AGENTS_OPTIMIZERS = 10 # População/Partículas
-T_MAX_ITER_OPTIMIZERS = 100 # Iterações (Artigo sugere 100)
+N_AGENTS_OPTIMIZERS = 20 # População/Partículas
+T_MAX_ITER_OPTIMIZERS = 20 # Iterações (Artigo sugere 100)
 
 # Parâmetros Fitness
 ALPHA_FITNESS = 0.99
@@ -84,19 +98,26 @@ def train_and_evaluate_final_model(model_name, selected_features_vector,
     print(f"Iniciando treinamento final do modelo {model_name}...")
     early_stopping_final = tf.keras.callbacks.EarlyStopping(
         monitor='val_loss', # Monitora a perda na fração de validação do treino final
-        patience=dnn_params.get('patience', 10),
+        patience=dnn_params.get('patience', 30),
         restore_best_weights=True,
         verbose=1
     )
     
     history = final_model.fit(
         X_train_full_selected, y_train_full,
-        epochs=dnn_params.get('epochs', 100),
-        batch_size=dnn_params.get('batch_size', 32),
+        epochs=dnn_params.get('epochs', 150),
+        batch_size=dnn_params.get('batch_size', 128),
         validation_split=0.1, # Usa 10% do X_train_full_selected para validação interna do treino final
         callbacks=[early_stopping_final],
         verbose=1
     )
+    
+    history_data = history.history # history é o objeto retornado por model.fit
+
+    # Plotar histórico de treinamento do modelo final
+    plot_dnn_training_history(history_data, 
+                              title=f"Histórico de Treino Final - {model_name}", 
+                              filename=f"final_dnn_history_{model_name.replace('+', '_')}.png")
 
     # Avaliação no Conjunto de Teste
     print(f"\nAvaliando {model_name} no conjunto de teste...")
@@ -115,7 +136,7 @@ def train_and_evaluate_final_model(model_name, selected_features_vector,
         print(f"Erro ao salvar o modelo {model_name}: {e}")
 
 
-    return metrics, history.history # Retorna também o histórico para possível plotagem
+    return metrics, history_data
 
 # --- Script Principal ---
 if __name__ == "__main__":
@@ -145,10 +166,20 @@ if __name__ == "__main__":
     
     class_names = ["Normal (0)", "Interictal (1)", "Ictal (2)"]
 
+    # Plotar exemplos de sinais EEG brutos
+    print("\nPlotando exemplos de sinais EEG brutos...", flush=True)
+    # Pega alguns segmentos de cada classe para plotar, se possível
+    # Aqui, apenas pegando os primeiros do dataset carregado total
+    plot_eeg_segments({'Raw': raw_data[:3,:]}, fs=FS, n_segments_to_plot=1, base_filename="eeg_raw")
+
     # 2. Pré-processar Dados
     print("\n--- 2. Pré-processando Dados ---")
     data_processed = preprocess_eeg(raw_data, fs=FS, highcut_hz=HIGHCUT_HZ, order=FILTER_ORDER)
-
+    
+    # Plotar exemplos de sinais EEG pré-processados
+    print("\nPlotando exemplos de sinais EEG pré-processados...", flush=True)
+    plot_eeg_segments({'Processed': data_processed[:3,:]}, fs=FS, n_segments_to_plot=1, base_filename="eeg_processed")
+    
     # 3. Dividir Dados
     print("\n--- 3. Dividindo Dados ---")
     X_train_p, X_val_p, X_test_p, y_train, y_val, y_test = split_data(
@@ -157,22 +188,74 @@ if __name__ == "__main__":
 
     # 4. Extrair Características SWT
     print("\n--- 4. Extraindo Características SWT ---")
+
     print("Extraindo features para o conjunto de TREINO...")
     X_train_feat, feature_names = extract_swt_features(X_train_p, wavelet=SWT_WAVELET, level=SWT_LEVEL)
+
+    # Plotar coeficientes SWT de um segmento de exemplo do treino
+    if X_train_p.shape[0] > 0:
+        print("\nPlotando coeficientes SWT de um segmento de treino de exemplo...", flush=True)
+        example_signal_for_swt_plot = X_train_p[0, :]
+        original_signal_length = X_train_p.shape[1]
+        signal_length_for_swt = original_signal_length - (original_signal_length % 2)
+        if original_signal_length % 2 != 0: # Reaplicar truncamento para consistência
+            example_signal_for_swt_plot = example_signal_for_swt_plot[:signal_length_for_swt] # signal_length_for_swt do escopo de extração
+        
+        # Recalcular SWT para este sinal específico para obter os coeficientes para plotagem
+        # (A função extract_swt_features não retorna os coeficientes brutos, apenas a matriz de features)
+        # Precisamos de signal_length_for_swt que foi definido dentro de extract_swt_features
+        # Melhor pegar do X_train_p e truncar novamente aqui.
+        slfs = X_train_p.shape[1] - (X_train_p.shape[1] % 2)
+        example_signal_for_swt_plot_truncated = X_train_p[0, :slfs]
+
+        # Se a função apply_swt agora retorna a lista plana de arrays:
+        swt_coeffs_arrays_example = apply_swt(example_signal_for_swt_plot_truncated, wavelet=SWT_WAVELET, level=SWT_LEVEL)
+        
+        example_coeffs_map_for_plot = {}
+        if isinstance(swt_coeffs_arrays_example, list) and len(swt_coeffs_arrays_example) == (SWT_LEVEL + 1):
+            example_coeffs_map_for_plot[f'A{SWT_LEVEL}'] = swt_coeffs_arrays_example[0]
+            for k_idx_plot in range(SWT_LEVEL):
+                detail_level_val_plot = SWT_LEVEL - k_idx_plot
+                array_idx_plot = k_idx_plot + 1
+                example_coeffs_map_for_plot[f'D{detail_level_val_plot}'] = swt_coeffs_arrays_example[array_idx_plot]
+            plot_swt_coefficients(example_coeffs_map_for_plot, segment_idx=0, base_filename="swt_coeffs_train_example")
+        else:
+            print("Não foi possível obter coeficientes SWT para plotagem de exemplo.", flush=True)
+
     print("Extraindo features para o conjunto de VALIDAÇÃO...")
     X_val_feat, _ = extract_swt_features(X_val_p, wavelet=SWT_WAVELET, level=SWT_LEVEL)
+
     print("Extraindo features para o conjunto de TESTE...")
     X_test_feat, _ = extract_swt_features(X_test_p, wavelet=SWT_WAVELET, level=SWT_LEVEL)
     
     DIM_FEATURES = X_train_feat.shape[1]
     print(f"Total de {DIM_FEATURES} características extraídas.")
     
+    print("\n--- Plotando Distribuição dos Dados com PCA ---")
+    X_datasets_for_plot = {
+        'Treino': X_train_feat,
+        'Validação': X_val_feat,
+        'Teste': X_test_feat
+    }
+    y_datasets_for_plot = {
+        'Treino': y_train,
+        'Validação': y_val,
+        'Teste': y_test
+    }
+    # class_names já está definido no seu main.py: ["Normal (0)", "Interictal (1)", "Ictal (2)"]
+    plot_data_distribution_pca(X_datasets_for_plot, y_datasets_for_plot,
+                               title="Distribuição dos Conjuntos de Dados no Espaço de Features (PCA)",
+                               filename="data_distribution_pca_sets.png",
+                               class_names=class_names)
+
     all_results = {}
     all_convergence_curves = []
     convergence_labels = []
 
     # --- 5. Otimização com BDA ---
     print("\n\n--- 5. Otimização com Binary Dragonfly Algorithm (BDA) ---")
+    # Resetar contador de plots da fitness antes de iniciar o BDA
+    reset_fitness_call_count()
     start_time_bda_opt = time.time()
     bda = BinaryDragonflyAlgorithm(
         N=N_AGENTS_OPTIMIZERS, T=T_MAX_ITER_OPTIMIZERS, dim=DIM_FEATURES,
@@ -199,6 +282,7 @@ if __name__ == "__main__":
 
     # --- 6. Otimização com BPSO ---
     print("\n\n--- 6. Otimização com Binary Particle Swarm Optimization (BPSO) ---")
+    reset_fitness_call_count()
     start_time_bpso_opt = time.time()
     bpso = BinaryPSO(
         N=N_AGENTS_OPTIMIZERS, T=T_MAX_ITER_OPTIMIZERS, dim=DIM_FEATURES,
@@ -225,7 +309,9 @@ if __name__ == "__main__":
     # Plotar curvas de convergência dos otimizadores
     if all_convergence_curves:
         plot_convergence_curves(all_convergence_curves, convergence_labels, "Convergência dos Otimizadores (Fitness na Validação)")
-
+    plot_convergence_curves([convergence_bda, convergence_bpso], ["BDA", "BPSO"], 
+                            title="Convergência dos Otimizadores (Fitness na Validação)", 
+                            filename="optimizers_convergence_final.png")
 
     # --- 7. Treinamento e Avaliação Final ---
     print("\n\n--- 7. Treinamento e Avaliação Final dos Modelos ---")
@@ -279,9 +365,9 @@ if __name__ == "__main__":
         f1_macro = report.get('macro avg', {}).get('f1-score', 0) * 100
         
         specificities = results_dict.get('specificities', {})
-        esp_cl0 = specificities.get('specificity_class_0', 0) * 100
-        esp_cl1 = specificities.get('specificity_class_1', 0) * 100
-        esp_cl2 = specificities.get('specificity_class_2', 0) * 100
+        esp_cl0 = specificities.get('specificity_Normal_0', 0) * 100
+        esp_cl1 = specificities.get('specificity_Interictal_1', 0) * 100
+        esp_cl2 = specificities.get('specificity_Ictal_2', 0) * 100
 
         print(f"| {algo_name:<9} | {num_feat:<13} | {acc:^12.2f} | {sens_cl0:^12.2f} | {sens_cl1:^12.2f} | {sens_cl2:^12.2f} | {esp_cl0:^11.2f} | {esp_cl1:^11.2f} | {esp_cl2:^11.2f} | {f1_macro:^12.2f} |")
 
@@ -291,6 +377,18 @@ if __name__ == "__main__":
         print_results_row("BPSO+DNN", all_results['bpso_dnn_final_eval'])
     print("-----------------------------------------------------------------------------------------------------------------")
 
+    # --- 9. Plot Comparativo Final (Estilo Figuras 6,7,8 do artigo) ---
+    print("\n\n--- Gerando Gráficos Comparativos Finais ---", flush=True)
+    final_eval_results_for_plot = {}
+    if 'bda_dnn_final_eval' in all_results and all_results['bda_dnn_final_eval'] is not None:
+        final_eval_results_for_plot['BDA+DNN'] = all_results['bda_dnn_final_eval']
+    if 'bpso_dnn_final_eval' in all_results and all_results['bpso_dnn_final_eval'] is not None:
+        final_eval_results_for_plot['BPSO+DNN'] = all_results['bpso_dnn_final_eval']
+    
+    if final_eval_results_for_plot:
+        plot_final_metrics_comparison_bars(final_eval_results_for_plot, base_filename="final_model_metrics")
+    else:
+        print("Nenhum resultado de avaliação final para plotar gráficos de barras.", flush=True)
 
     total_execution_time = time.time() - start_time_total
     print(f"\nTempo total de execução da pipeline: {total_execution_time/60:.2f} minutos ({total_execution_time:.2f} segundos)")
