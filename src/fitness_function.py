@@ -21,7 +21,7 @@ def reset_fitness_call_count():
 def evaluate_fitness(binary_feature_vector,
                      X_train_all_features, y_train,
                      X_val_all_features, y_val,
-                     dnn_training_params={'epochs': 100, 'batch_size': 32, 'patience': 10},
+                     dnn_training_params={'epochs': 120, 'batch_size': 64, 'patience': 20},
                      alpha=0.99, beta=0.01, verbose=0, optimizer_name="optimizer", current_iter=0, agent_idx=0, plot_this_fitness_dnn_history=False):
     """
     Avalia a aptidão de um subconjunto de características binário.
@@ -62,7 +62,7 @@ def evaluate_fitness(binary_feature_vector,
     # Define Early Stopping
     early_stopping = EarlyStopping(
         monitor='val_loss',
-        patience=dnn_training_params.get('patience', 10),
+        patience=dnn_training_params.get('patience', 30),
         restore_best_weights=True,
         verbose=verbose
     )
@@ -70,8 +70,8 @@ def evaluate_fitness(binary_feature_vector,
     # Treina a DNN
     history_obj = model.fit(
         X_train_selected, y_train,
-        epochs=dnn_training_params.get('epochs', 100),
-        batch_size=dnn_training_params.get('batch_size', 32),
+        epochs=dnn_training_params.get('epochs', 120),
+        batch_size=dnn_training_params.get('batch_size', 64),
         validation_data=(X_val_selected, y_val),
         callbacks=[early_stopping],
         verbose=verbose # 0 para menos output durante treino da fitness

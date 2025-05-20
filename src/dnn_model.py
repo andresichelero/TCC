@@ -18,9 +18,18 @@ def build_dnn_model(num_selected_features, num_classes=3, jit_compile_dnn=False)
 
     model = keras.Sequential(name="MLP_Classifier")
     model.add(layers.Input(shape=(num_selected_features,), name="Input_Layer"))
-    model.add(layers.Dense(10, activation='sigmoid', name="Hidden_Layer_1"))
-    model.add(layers.Dense(10, activation='sigmoid', name="Hidden_Layer_2"))
-    model.add(layers.Dense(10, activation='sigmoid', name="Hidden_Layer_3"))
+    increase_complexity = True # Usar activation relu ou sigmoid (tendo problemas com sigmoid)
+    if increase_complexity:
+        model.add(layers.Dense(32, activation='relu', name="Hidden_Layer_1"))
+        model.add(layers.Dropout(0.3)) # Adicionar Dropout para regularização
+        model.add(layers.Dense(32, activation='relu', name="Hidden_Layer_2"))
+        model.add(layers.Dropout(0.3))
+        model.add(layers.Dense(16, activation='relu', name="Hidden_Layer_3"))
+    else: # Arquitetura original
+        model.add(layers.Dense(10, activation='sigmoid', name="Hidden_Layer_1"))
+        model.add(layers.Dense(10, activation='sigmoid', name="Hidden_Layer_2"))
+        model.add(layers.Dense(10, activation='sigmoid', name="Hidden_Layer_3"))
+
     model.add(layers.Dense(num_classes, activation='softmax', name="Output_Layer"))
 
     model.compile(optimizer='adam',

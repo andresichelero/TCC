@@ -16,7 +16,7 @@ from src.dnn_model import build_dnn_model
 from src.fitness_function import evaluate_fitness, reset_fitness_call_count
 from src.bda import BinaryDragonflyAlgorithm
 from src.bpso import BinaryPSO
-from src.utils import (calculate_all_metrics, plot_convergence_curves,
+from src.utils import (calculate_all_metrics, plot_convergence_curves, plot_data_distribution_pca,
                        plot_eeg_segments, plot_swt_coefficients, plot_dnn_training_history,
                        plot_final_metrics_comparison_bars)
 import src.utils as utils_module
@@ -54,15 +54,13 @@ TEST_SIZE = 0.15
 VAL_SIZE = 0.15 # Usado dentro da função de fitness e para otimização
 
 # Parâmetros da DNN para Fitness e Treino Final
-DNN_TRAINING_PARAMS_FITNESS = {'epochs': 80, 'batch_size': 256, 'patience': 15} # Para fitness (mais rápido)
-DNN_TRAINING_PARAMS_FINAL = {'epochs': 80, 'batch_size': 256, 'patience': 20} # Para treino final (mais robusto)
-# Se patience do final for usado com EarlyStopping, separar uma pequena porção do X_train_full para validação interna do treino final.
-# Ou treinar por um número fixo de épocas no conjunto treino+validação. O artigo menciona ambas.
+DNN_TRAINING_PARAMS_FITNESS = {'epochs': 120, 'batch_size': 64, 'patience': 25} # Para fitness (mais rápido)
+DNN_TRAINING_PARAMS_FINAL = {'epochs': 250, 'batch_size': 128, 'patience': 30} # Para treino final (mais robusto)
 # Foi usado EarlyStopping com val_split para o treino final.
 
 # Parâmetros dos Otimizadores
-N_AGENTS_OPTIMIZERS = 15 # População/Partículas
-T_MAX_ITER_OPTIMIZERS = 10 # Iterações (Artigo sugere 100)
+N_AGENTS_OPTIMIZERS = 20 # População/Partículas
+T_MAX_ITER_OPTIMIZERS = 20 # Iterações (Artigo sugere 100)
 
 # Parâmetros Fitness
 ALPHA_FITNESS = 0.99
@@ -100,15 +98,15 @@ def train_and_evaluate_final_model(model_name, selected_features_vector,
     print(f"Iniciando treinamento final do modelo {model_name}...")
     early_stopping_final = tf.keras.callbacks.EarlyStopping(
         monitor='val_loss', # Monitora a perda na fração de validação do treino final
-        patience=dnn_params.get('patience', 10),
+        patience=dnn_params.get('patience', 30),
         restore_best_weights=True,
         verbose=1
     )
     
     history = final_model.fit(
         X_train_full_selected, y_train_full,
-        epochs=dnn_params.get('epochs', 100),
-        batch_size=dnn_params.get('batch_size', 32),
+        epochs=dnn_params.get('epochs', 150),
+        batch_size=dnn_params.get('batch_size', 128),
         validation_split=0.1, # Usa 10% do X_train_full_selected para validação interna do treino final
         callbacks=[early_stopping_final],
         verbose=1
@@ -233,6 +231,23 @@ if __name__ == "__main__":
     DIM_FEATURES = X_train_feat.shape[1]
     print(f"Total de {DIM_FEATURES} características extraídas.")
     
+    print("\n--- Plotando Distribuição dos Dados com PCA ---")
+    X_datasets_for_plot = {
+        'Treino': X_train_feat,
+        'Validação': X_val_feat,
+        'Teste': X_test_feat
+    }
+    y_datasets_for_plot = {
+        'Treino': y_train,
+        'Validação': y_val,
+        'Teste': y_test
+    }
+    # class_names já está definido no seu main.py: ["Normal (0)", "Interictal (1)", "Ictal (2)"]
+    plot_data_distribution_pca(X_datasets_for_plot, y_datasets_for_plot,
+                               title="Distribuição dos Conjuntos de Dados no Espaço de Features (PCA)",
+                               filename="data_distribution_pca_sets.png",
+                               class_names=class_names)
+
     all_results = {}
     all_convergence_curves = []
     convergence_labels = []

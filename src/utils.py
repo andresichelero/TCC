@@ -4,10 +4,14 @@ from sklearn.metrics import confusion_matrix, classification_report, accuracy_sc
 import matplotlib.pyplot as plt
 import os
 from scipy.signal import welch # Para o espectro de frequência
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
+import pandas as pd
+import seaborn as sns 
 
 # Flag global para controlar salvamento de plots (para não mostrar interativamente em execuções longas)
 # E diretório para salvar
-SAVE_PLOTS = True # Mude para False se quiser ver interativamente (pode pausar o script)
+SAVE_PLOTS = True # Mudar para False se quiser ver interativamente (pode pausar o script)
 PLOTS_DIR = "results/plots"
 
 def calculate_specificity(y_true, y_pred, class_label, num_classes):
@@ -363,6 +367,120 @@ def plot_convergence_curves(curves, labels, title="Curvas de Convergência", fil
     plt.grid(True)
     #plt.show()
     _handle_plot(fig, filename, title) # Usa a função auxiliar
+
+def plot_data_distribution_pca(X_dict, y_dict, title="Distribuição dos Dados (PCA)", filename="data_distribution_pca.png", class_names=None):
+    """
+    Plota a distribuição dos diferentes conjuntos de dados (treino, val, teste)
+    após aplicar PCA para redução a 2D.
+    Args:
+        X_dict (dict): Dicionário de matrizes de features. Ex: {'Treino': X_train_feat, 'Validação': X_val_feat, 'Teste': X_test_feat}
+        y_dict (dict): Dicionário de rótulos correspondentes. Ex: {'Treino': y_train, 'Validação': y_val, 'Teste': y_test}
+        title (str): Título do gráfico.
+        filename (str): Nome do arquivo para salvar o plot.
+        class_names (list, optional): Nomes das classes para a legenda.
+    """
+    if not X_dict or not y_dict:
+        print("Dicionários X ou y estão vazios. Não é possível plotar a distribuição.")
+        return
+
+    combined_X = []
+    combined_y = []
+    set_labels = [] # Para diferenciar treino, val, teste no plot
+
+    print(f"Plotando distribuição para os conjuntos: {list(X_dict.keys())}")
+
+    for set_name, X_data in X_dict.items():
+        if X_data is None or X_data.shape[0] == 0:
+            print(f"Aviso: Conjunto '{set_name}' está vazio ou é None. Pulando.")
+            continue
+        if y_dict.get(set_name) is None or len(y_dict[set_name]) != X_data.shape[0]:
+            print(f"Aviso: Rótulos para o conjunto '{set_name}' estão ausentes ou com tamanho incorreto. Pulando.")
+            continue
+            
+        combined_X.append(X_data)
+        combined_y.append(y_dict[set_name])
+        set_labels.extend([set_name] * X_data.shape[0])
+
+    if not combined_X:
+        print("Nenhum dado válido para combinar e plotar.")
+        return
+
+    X_all = np.vstack(combined_X)
+    y_all = np.concatenate(combined_y)
+    
+    # 1. Padronizar os dados antes do PCA
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X_all)
+
+    # 2. Aplicar PCA
+    if X_scaled.shape[1] < 2:
+        print("Número de features menor que 2, não é possível aplicar PCA para 2D. Plotando 1D se possível.")
+        if X_scaled.shape[1] == 1:
+            pca_result = X_scaled
+            df_pca = pd.DataFrame(data={'PC1': pca_result.flatten(), 'label': y_all, 'set': set_labels})
+            fig, ax = plt.subplots(figsize=(12, 7))
+            sns.stripplot(x='PC1', y='set', hue='label', data=df_pca, ax=ax, jitter=True, dodge=True, palette='viridis')
+            ax.set_title(f'{title} (1D)')
+            if class_names:
+                handles, labels = ax.get_legend_handles_labels()
+                # Mapear rótulos numéricos para nomes de classes
+                new_labels = [class_names[int(label)] if label.isdigit() and int(label) < len(class_names) else label for label in labels]
+                ax.legend(handles, new_labels, title='Classe')
+            else:
+                 ax.legend(title='Classe')
+            plt.tight_layout()
+            _handle_plot(fig, filename, title)
+        return
+
+    pca = PCA(n_components=2, random_state=42)
+    pca_result = pca.fit_transform(X_scaled)
+
+    df_pca = pd.DataFrame(data=pca_result, columns=['PC1', 'PC2'])
+    df_pca['label'] = y_all
+    df_pca['set'] = set_labels # Adiciona a identificação do conjunto (Treino, Val, Teste)
+
+    explained_variance_ratio = pca.explained_variance_ratio_
+    print(f"PCA: Variância explicada pelos 2 componentes principais: {explained_variance_ratio.sum()*100:.2f}%")
+
+    fig, ax = plt.subplots(figsize=(12, 9))
+    
+    scatter_plot = sns.scatterplot(
+        x="PC1", y="PC2",
+        hue="label",
+        style="set",# Marcador por conjunto (Treino, Val, Teste)
+        data=df_pca,
+        palette="plasma", # esquema de cores (ex: viridis, plasma, coolwarm)
+        s=50,# Tamanho dos marcadores
+        alpha=0.7,
+        ax=ax
+    )
+    
+    ax.set_title(title)
+    ax.set_xlabel(f'Componente Principal 1 ({explained_variance_ratio[0]*100:.2f}% variância)')
+    ax.set_ylabel(f'Componente Principal 2 ({explained_variance_ratio[1]*100:.2f}% variância)')
+    ax.grid(True)
+
+    handles, labels = scatter_plot.get_legend_handles_labels()
+    num_classes = len(np.unique(y_all))
+    num_sets = len(np.unique(set_labels))
+    hue_handles = handles[1:num_classes+1]
+    hue_labels_orig = labels[1:num_classes+1]
+    style_handles = handles[num_classes+2 : num_classes+2+num_sets]
+    style_labels = labels[num_classes+2 : num_classes+2+num_sets]
+
+    if class_names:
+        final_hue_labels = [class_names[int(lbl)] if lbl.isdigit() and int(lbl) < len(class_names) else lbl for lbl in hue_labels_orig]
+    else:
+        final_hue_labels = hue_labels_orig
+        
+    leg1 = ax.legend(hue_handles, final_hue_labels, title='Classe', loc='upper left', bbox_to_anchor=(1.01, 1))
+    ax.add_artist(leg1)
+    
+    if style_handles and style_labels:
+        ax.legend(style_handles, style_labels, title='Conjunto', loc='lower left', bbox_to_anchor=(1.01, 0))
+
+    plt.tight_layout(rect=[0, 0, 0.85, 1])
+    _handle_plot(fig, filename, title)
 
 if __name__ == '__main__':
     y_true_ex = np.array([0, 1, 2, 0, 1, 2, 0, 0, 1, 1, 2, 2, 2])
