@@ -3,6 +3,7 @@
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
+from tensorflow.keras.optimizers import Adam
 
 def build_dnn_model(num_selected_features, num_classes=3, jit_compile_dnn=False):
     """
@@ -44,10 +45,13 @@ def build_dnn_model(num_selected_features, num_classes=3, jit_compile_dnn=False)
         model.add(layers.Dropout(0.1, name="Hidden_Layer_3_Dropout"))
 
     model.add(layers.Dense(num_classes, activation='softmax', name="Output_Layer"))
-
-    model.compile(optimizer='adam',
-                  loss='sparse_categorical_crossentropy', # Apropriado para rótulos inteiros
-                  metrics=['accuracy'], jit_compile=jit_compile_dnn)
+    opt = Adam(learning_rate=0.0009)
+    model.compile(
+        optimizer=opt,
+        loss="sparse_categorical_crossentropy",
+        metrics=["accuracy"],
+        jit_compile=jit_compile_dnn,
+    )
 
     ##model.summary()
     return model
