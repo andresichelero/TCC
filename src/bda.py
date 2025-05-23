@@ -1,5 +1,6 @@
 # Implementação do BDA
 # src/bda.py
+import gc
 import math
 import numpy as np
 from tqdm import tqdm
@@ -101,6 +102,7 @@ class BinaryDragonflyAlgorithm:
         print(f"\nIniciando otimização BDA por {self.T} iterações...")
 
         for t in tqdm(range(self.T), desc="BDA Iterations"):
+            gc.collect()
             # Atualização de Tau conforme artigo (diminui de tau_max para tau_min)
             # Isto faz tau DECRESCER de tau_max para tau_min.
             if self.T > 1:
@@ -113,7 +115,7 @@ class BinaryDragonflyAlgorithm:
             current_w = self.w_inertia
 
             # Plotar a primeira DNN desta iteração se for uma iteração de interesse
-            plot_first_agent_in_iter = True #(t % 2 == 0 or t == self.T -1 ) # Ex: a cada 2 iterações e na última
+            plot_first_agent_in_iter = (t % 2 == 0 or t == self.T -1 ) # Ex: a cada 2 iterações e na última
 
             for i in range(self.N): # Para cada libélula i
                 # --- Calcular Vetores de Comportamento S, A, C ---

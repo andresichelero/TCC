@@ -9,10 +9,11 @@ try:
 except ImportError:
     from dnn_model import build_dnn_model
     from utils import plot_dnn_training_history
+import gc
 
 # Contador global para controlar o plot da fitness (apenas para depuração)
 FITNESS_CALL_COUNT = 0
-MAX_FITNESS_PLOTS_PER_RUN = 5 # Quantos históricos de DNN da fitness plotar por execução do otimizador
+MAX_FITNESS_PLOTS_PER_RUN = 1 # Quantos históricos de DNN da fitness plotar por execução do otimizador
 
 def reset_fitness_call_count():
     global FITNESS_CALL_COUNT
@@ -97,7 +98,8 @@ def evaluate_fitness(binary_feature_vector,
     # Libera memória do modelo explicitamente
     del model
     del history_obj
-
+    gc.collect()
+    gc.collect()
     return fitness
 
 if __name__ == '__main__':

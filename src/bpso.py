@@ -1,5 +1,6 @@
 # Implementação do BPSO
 # src/bpso.py
+import gc
 import numpy as np
 from tqdm import tqdm
 
@@ -75,6 +76,7 @@ class BinaryPSO:
         print(f"\nIniciando otimização BPSO por {self.T} iterações...")
 
         for t in tqdm(range(self.T), desc="BPSO Iterations"):
+            gc.collect()
             # Atualiza o peso de inércia (linearmente decrescente)
             current_w = self.w_max - (self.w_max - self.w_min) * (t / self.T)
 
