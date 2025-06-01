@@ -6,7 +6,6 @@ import time
 import tensorflow as tf
 import json
 import sys
-import matplotlib.pyplot as plt
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(current_dir, 'src'))
@@ -108,7 +107,7 @@ def train_and_evaluate_final_model(model_name, selected_features_vector,
         X_train_full_selected, y_train_full,
         epochs=dnn_params.get('epochs', 150),
         batch_size=dnn_params.get('batch_size', 128),
-        validation_split=0.1, # Usa 10% do X_train_full_selected para validação interna do treino final
+        validation_split=0.2, # Usa 20% do X_train_full_selected para validação interna do treino final
         callbacks=[early_stopping_final],
         verbose=1
     )
