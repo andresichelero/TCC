@@ -6,289 +6,390 @@ import tensorflow as tf
 import time
 import json
 import pandas as pd
+import gc 
 
+# Configuração de Caminhos
 current_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(current_dir, 'src'))
+sys.path.insert(0, os.path.join(current_dir, 'src')) 
 
 from src.data_loader import load_bonn_data, preprocess_eeg, split_data
 from src.feature_extractor import extract_swt_features
-from src.dnn_model import build_dnn_model
+from src.dnn_model import build_dnn_model 
 from src.utils import calculate_all_metrics, plot_dnn_training_history
 import src.utils as utils_module
 
-# --- Configurações ---
-BASE_DATA_DIR = os.path.join(current_dir, 'data')
-RESULTS_DIR = os.path.join(current_dir, 'results', 'dnn_standalone_tests_series') # Novo diretório para séries
-PLOTS_DIR_STANDALONE = os.path.join(RESULTS_DIR, 'plots')
-os.makedirs(PLOTS_DIR_STANDALONE, exist_ok=True)
-os.makedirs(RESULTS_DIR, exist_ok=True)
+from sklearn.model_selection import GridSearchCV
+from scikeras.wrappers import KerasClassifier 
+from tensorflow.keras.callbacks import EarlyStopping
 
+# --- Configurações Globais ---
+BASE_DATA_DIR = os.path.join(current_dir, 'data')
+RESULTS_DIR_BASE = os.path.join(current_dir, 'results', 'dnn_gridsearch_custom_params_nopatience') 
 RANDOM_SEED = 42
 np.random.seed(RANDOM_SEED)
 tf.random.set_seed(RANDOM_SEED)
 
-utils_module.SAVE_PLOTS = True
-utils_module.PLOTS_DIR = PLOTS_DIR_STANDALONE
+utils_module.SAVE_PLOTS = True 
 
+# Parâmetros do Dataset e Pré-processamento
 FS = 173.61
 HIGHCUT_HZ = 40.0
 FILTER_ORDER = 4
 SWT_WAVELET = 'db4'
 SWT_LEVEL = 4
-
 TEST_SIZE = 0.15
-VAL_SIZE = 0.15
+VAL_SIZE = 0.15 
 
-# --- PARÂMETROS E CONFIGURAÇÕES DA DNN PARA TESTAR ---
-# Listas de parâmetros de treinamento
-EPOCHS_LIST = [200, 250]  # Ex: [150, 250, 300]
-PATIENCE_LIST = [25, 30] # Ex: [15, 20, 30]
-BATCH_SIZE_LIST = [32, 64] # Ex: [32, 64, 128]
-#LEARNING_RATE_LIST
+# --- HIPERPARÂMETROS PARA GridSearchCV ---
+EPOCHS_LIST = [200, 250]  # Ou as listas que você estava usando, ex: [150, 200, 250]
+BATCH_SIZE_LIST = [32, 64] # Ex: [16, 32, 64]
+LEARNING_RATE_LIST = [0.001] # Ex: [0.001, 0.0005, 0.0001]
+DROPOUT_RATE_LIST = [0.1] # Ex: [0.1, 0.2, 0.3, 0.4]
+FIXED_PATIENCE_ES = 25
 
-# Identificadores para diferentes configurações da DNN em dnn_model.py
-DNN_CONFIG_IDS_TO_TEST = ["original", "config_A", "config_B"]
-
-
-# ---CONJUNTO FIXO DE CARACTERÍSTICAS ---
-USE_ALL_FEATURES = False
-FIXED_FEATURE_VECTOR_MANUAL = [
-    0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 1, 0, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 0, 1, 0, 1, 0, 0, 0,
-    0, 1, 0, 0, 1
+OPTIMIZER_PARAMS = [
+    {'model__optimizer_name': ['adam'], 'model__learning_rate': LEARNING_RATE_LIST},
+    #{'model__optimizer_name': ['sgd'], 'model__learning_rate': LEARNING_RATE_LIST, 'model__momentum': [0.9]},
+    #{'model__optimizer_name': ['rmsprop'], 'model__learning_rate': LEARNING_RATE_LIST},
 ]
-LOAD_FEATURES_FROM_JSON = True
-RESULTS_JSON_PATH = os.path.join(current_dir, 'results/all_pipeline_results.json')
-OPTIMIZER_FOR_FEATURES = "bpso" # "bda" ou "bpso" (usará as features encontradas por eles na ultima run)
 
-def test_dnn_with_fixed_features(
+REGULARIZER_PARAMS = [
+    {'model__kernel_regularizer_type': [None]},
+]
+
+# --- FONTES DE FEATURES PARA TESTAR ---
+FEATURE_SOURCES_TO_TEST = ["bda", "bpso", "all_features"] 
+LOAD_FEATURES_FROM_JSON = True 
+RESULTS_JSON_PATH_MAIN_PIPELINE = os.path.join(current_dir, 'results/all_pipeline_results.json')
+FIXED_FEATURE_VECTOR_MANUAL_EXAMPLE = [1]*45 
+
+
+def train_evaluate_best_model(
+    best_params_from_grid,
     fixed_binary_vector,
     X_train_all_features, y_train_data,
-    X_val_all_features, y_val_data,
+    X_val_all_features, y_val_data, 
     X_test_all_features, y_test_data,
-    dnn_training_params_override,
-    dnn_config_id_override,
-    class_names, test_run_name="dnn_test"
+    class_names, 
+    fixed_es_patience,
+    run_name_prefix="best_dnn_model", current_plots_dir="plots"
 ):
-    print(f"\n--- Testando DNN com Características Fixas: {test_run_name} ---")
-    print(f"--- Parâmetros de Treino: {dnn_training_params_override} ---")
-    print(f"--- Configuração DNN ID: {dnn_config_id_override} ---")
+    utils_module.PLOTS_DIR = current_plots_dir 
 
     selected_indices = np.where(np.array(fixed_binary_vector) == 1)[0]
     num_selected = len(selected_indices)
 
     if num_selected == 0:
-        print("ERRO: Nenhuma característica selecionada. Abortando.")
-        return None
+        print(f"ERRO: Nenhuma feature selecionada para {run_name_prefix}. Avaliação abortada.")
+        return None, 0.0
 
     X_train_selected = X_train_all_features[:, selected_indices]
-    X_val_selected = X_val_all_features[:, selected_indices]
+    X_val_selected = X_val_all_features[:, selected_indices] 
     X_test_selected = X_test_all_features[:, selected_indices]
 
-    tf.keras.backend.clear_session()
+    best_lr = best_params_from_grid.get('model__learning_rate', 0.001)
+    best_optimizer = best_params_from_grid.get('model__optimizer_name', 'adam')
+    best_momentum = best_params_from_grid.get('model__momentum') 
+    best_reg_type = best_params_from_grid.get('model__kernel_regularizer_type')
+    best_reg_strength = best_params_from_grid.get('model__kernel_regularizer_strength', 0.01)
+    best_dropout1 = best_params_from_grid.get('model__dropout_rate1', 0.1)
+    best_dropout2 = best_params_from_grid.get('model__dropout_rate2', 0.1)
+    best_dropout3 = best_params_from_grid.get('model__dropout_rate3', 0.1)
 
-    model = build_dnn_model(
+    best_epochs = best_params_from_grid.get('epochs', 200) 
+    best_batch_size = best_params_from_grid.get('batch_size', 64) 
+    current_patience_for_final_model = fixed_es_patience
+
+    run_name = (f"{run_name_prefix}_opt-{best_optimizer}_lr-{best_lr:.0e}_"
+                f"reg-{str(best_reg_type).lower()}_str-{best_reg_strength if best_reg_type else 0:.0e}_"
+                f"drp-{best_dropout1:.1f}-{best_dropout2:.1f}-{best_dropout3:.1f}_"
+                f"ep-{best_epochs}_bs-{best_batch_size}_patFIX-{current_patience_for_final_model}").replace('.', '_')
+
+    print(f"\n--- Treinando e Avaliando Melhor Modelo Final: {run_name} ---")
+    print(f"   Com Parâmetros (patience é fixa em {current_patience_for_final_model}): {best_params_from_grid}")
+    tf.keras.backend.clear_session()
+    gc.collect()
+
+    final_model = build_dnn_model(
         num_selected_features=num_selected,
         num_classes=len(class_names),
-        dnn_config_id=dnn_config_id_override
+        learning_rate=best_lr,
+        optimizer_name=best_optimizer,
+        momentum=best_momentum,
+        kernel_regularizer_type=best_reg_type,
+        kernel_regularizer_strength=best_reg_strength,
+        dropout_rate1=best_dropout1,
+        dropout_rate2=best_dropout2,
+        dropout_rate3=best_dropout3,
+        jit_compile_dnn=False 
     )
-    print("\nResumo do Modelo DNN:")
-    model.summary(print_fn=lambda x: print(x, flush=True))
+    final_model.summary(print_fn=lambda x: print(x, flush=True))
 
-
-    early_stopping = tf.keras.callbacks.EarlyStopping(
-        monitor='val_loss',
-        patience=dnn_training_params_override.get('patience', 20),
-        restore_best_weights=True,
+    early_stopping_final = EarlyStopping(
+        monitor='val_loss', 
+        patience=current_patience_for_final_model,
+        restore_best_weights=True, 
         verbose=1
     )
 
-    print("\nIniciando treinamento da DNN...")
     start_train_time = time.time()
-    history_obj = model.fit(
-        X_train_selected, y_train_data,
-        epochs=dnn_training_params_override.get('epochs', 100),
-        batch_size=dnn_training_params_override.get('batch_size', 64),
-        validation_data=(X_val_selected, y_val_data),
-        callbacks=[early_stopping],
+    history = final_model.fit(
+        X_train_selected, y_train_data, 
+        epochs=best_epochs, 
+        batch_size=best_batch_size,
+        validation_data=(X_val_selected, y_val_data), 
+        callbacks=[early_stopping_final], 
         verbose=1
     )
     training_time = time.time() - start_train_time
-    print(f"Treinamento da DNN finalizado em {training_time:.2f} segundos.")
+    print(f"Treinamento finalizado em {training_time:.2f} segundos.")
 
-    plot_dnn_training_history(
-        history_obj.history,
-        title=f"Histórico Treino DNN - {test_run_name}",
-        filename=f"dnn_history_{test_run_name}.png"
-    )
+    plot_dnn_training_history(history.history, title=f"Histórico Treino Final - {run_name}", filename=f"final_dnn_history_{run_name}.png")
 
-    print("\nAvaliando DNN no conjunto de teste...")
-    y_pred_test = np.argmax(model.predict(X_test_selected), axis=1)
+    y_pred_test = np.argmax(final_model.predict(X_test_selected), axis=1)
     metrics = calculate_all_metrics(y_test_data, y_pred_test, class_names=class_names)
     metrics['num_selected_features'] = num_selected
     metrics['training_time_seconds'] = training_time
+    metrics['best_params_from_gridsearch'] = best_params_from_grid 
+    metrics['fixed_early_stopping_patience'] = current_patience_for_final_model
 
-    model_save_path = os.path.join(RESULTS_DIR, f"model_{test_run_name}.keras")
+    model_save_path = os.path.join(current_plots_dir, "..", f"model_{run_name}.keras") 
     try:
-        model.save(model_save_path)
-        print(f"Modelo DNN salvo em: {model_save_path}")
+        final_model.save(model_save_path)
+        print(f"Modelo final salvo em: {model_save_path}")
     except Exception as e:
-        print(f"Erro ao salvar modelo DNN: {e}")
+        print(f"Erro ao salvar modelo final: {e}")
 
-    print(f"\n--- Resultados para {test_run_name} ---")
-    for key, value in metrics.items():
-        if key == "classification_report":
-            print(f"{key}:", flush=True)
-            for cat, report_vals in value.items():
-                if isinstance(report_vals, dict):
-                    print(f"  {cat}:", flush=True)
-                    for metric_name, metric_val in report_vals.items():
-                        print(f"    {metric_name}: {metric_val:.4f}", flush=True)
-                else:
-                     print(f"  {cat}: {report_vals:.4f}", flush=True)
-        elif key == "confusion_matrix":
-            print(f"{key}:\n{np.array(value)}", flush=True)
-        else:
-            print(f"{key}: {value}", flush=True)
-    return metrics
+    del final_model
+    gc.collect()
+    return metrics, training_time
+
 
 if __name__ == "__main__":
-    print("Iniciando Script de Teste Autônomo da DNN...")
-    overall_start_time = time.time()
+    print("Iniciando Script de Teste com GridSearchCV Extendido para DNN...")
+    overall_script_start_time = time.time()
 
-    # 1. Carregar Dados
     print("\n--- 1. Carregando Dados ---", flush=True)
     raw_data, raw_labels = load_bonn_data(BASE_DATA_DIR)
     class_names = ["Normal (0)", "Interictal (1)", "Ictal (2)"]
 
-    # 2. Pré-processar Dados
     print("\n--- 2. Pré-processando Dados ---", flush=True)
-    data_processed = preprocess_eeg(raw_data, fs=FS, highcut_hz=HIGHCUT_HZ, order=FILTER_ORDER) #
+    data_processed = preprocess_eeg(raw_data, fs=FS, highcut_hz=HIGHCUT_HZ, order=FILTER_ORDER)
 
-    # 3. Dividir Dados
     X_train_p, X_val_p, X_test_p, y_train, y_val, y_test = split_data(
         data_processed, raw_labels, test_size=TEST_SIZE, val_size=VAL_SIZE, random_state=RANDOM_SEED
     )
 
-    # 4. Extrair Características
-    print("\n--- 3. Extraindo Características (SWT) ---", flush=True)
-    X_train_feat_all, feature_names = extract_swt_features(X_train_p, wavelet=SWT_WAVELET, level=SWT_LEVEL)
+    print("\n--- 4. Extraindo Características (SWT) ---", flush=True)
+    X_train_feat_all, feature_names_swt = extract_swt_features(X_train_p, wavelet=SWT_WAVELET, level=SWT_LEVEL)
     X_val_feat_all, _ = extract_swt_features(X_val_p, wavelet=SWT_WAVELET, level=SWT_LEVEL)
     X_test_feat_all, _ = extract_swt_features(X_test_p, wavelet=SWT_WAVELET, level=SWT_LEVEL)
 
     DIM_FEATURES = X_train_feat_all.shape[1]
     print(f"Número total de características extraídas: {DIM_FEATURES}", flush=True)
+    
+    if len(FIXED_FEATURE_VECTOR_MANUAL_EXAMPLE) != DIM_FEATURES:
+        print(f"Aviso: FIXED_FEATURE_VECTOR_MANUAL_EXAMPLE não tem o comprimento correto ({len(FIXED_FEATURE_VECTOR_MANUAL_EXAMPLE)} vs {DIM_FEATURES}). Ajustando para todas as features.")
+        FIXED_FEATURE_VECTOR_MANUAL_EXAMPLE = np.ones(DIM_FEATURES, dtype=int).tolist()
 
-    current_fixed_feature_vector = None
-    base_run_name_suffix = "default_feats"
+    all_gridsearch_runs_master_results = []
 
-    if USE_ALL_FEATURES:
-        current_fixed_feature_vector = np.ones(DIM_FEATURES, dtype=int).tolist()
-        base_run_name_suffix = "all_features"
-    elif LOAD_FEATURES_FROM_JSON:
-        try:
-            with open(RESULTS_JSON_PATH, 'r') as f:
-                results_data = json.load(f) #
-            opt_key = f"{OPTIMIZER_FOR_FEATURES}_optimization"
-            if opt_key in results_data:
-                current_fixed_feature_vector = results_data[opt_key]["selected_features_vector"]
-                base_run_name_suffix = f"feats_from_{OPTIMIZER_FOR_FEATURES}"
-            else:
-                print(f"AVISO: Chave '{opt_key}' não encontrada. Usando manual.", flush=True)
-                current_fixed_feature_vector = FIXED_FEATURE_VECTOR_MANUAL
-                base_run_name_suffix = "manual_feats_fallback_json"
-        except Exception as e:
-            print(f"ERRO ao carregar do JSON: {e}. Usando manual.", flush=True)
-            current_fixed_feature_vector = FIXED_FEATURE_VECTOR_MANUAL
-            base_run_name_suffix = "manual_feats_error_fallback"
-    else:
-        current_fixed_feature_vector = FIXED_FEATURE_VECTOR_MANUAL
-        base_run_name_suffix = "manual_features"
+    for feature_source_name in FEATURE_SOURCES_TO_TEST:
+        print(f"\n\n===== INICIANDO GRIDSEARCH PARA FEATURES DE: {feature_source_name.upper()} =====")
 
-    if current_fixed_feature_vector is None or len(current_fixed_feature_vector) != DIM_FEATURES:
-        feat_len = len(current_fixed_feature_vector) if current_fixed_feature_vector is not None else "None"
-        print(f"ERRO CRÍTICO: Vetor de características inválido (comprimento {feat_len}, esperado {DIM_FEATURES}).", flush=True)
-        sys.exit(1)
-    print(f"Usando conjunto de características: {base_run_name_suffix} ({np.sum(current_fixed_feature_vector)} selecionadas)", flush=True)
+        current_results_dir = os.path.join(RESULTS_DIR_BASE, f"features_{feature_source_name}")
+        current_plots_dir = os.path.join(current_results_dir, 'plots')
+        os.makedirs(current_plots_dir, exist_ok=True)
+        utils_module.PLOTS_DIR = current_plots_dir 
 
-    all_series_results = []
-    total_combinations = len(EPOCHS_LIST) * len(PATIENCE_LIST) * len(BATCH_SIZE_LIST) * len(DNN_CONFIG_IDS_TO_TEST)
-    current_run_count = 0
+        current_fixed_feature_vector = None
+        run_name_suffix_for_features = f"feats_from_{feature_source_name}"
 
-    for epochs_val in EPOCHS_LIST:
-        for patience_val in PATIENCE_LIST:
-            for batch_size_val in BATCH_SIZE_LIST:
-                for dnn_id_val in DNN_CONFIG_IDS_TO_TEST:
-                    current_run_count += 1
-                    # Parâmetros de treino para esta iteração
-                    current_dnn_training_params = {
-                        'epochs': epochs_val,
-                        'batch_size': batch_size_val,
-                        'patience': patience_val
-                        # outros parâmetros (learning_rate)
-                    }
-
-                    # Nome descritivo para esta execução específica
-                    test_run_name_current = f"dnn_{dnn_id_val}_ep{epochs_val}_pat{patience_val}_bs{batch_size_val}_{base_run_name_suffix}"
-
-                    print(f"\n\n===== INICIANDO TESTE ({current_run_count}/{total_combinations}): {test_run_name_current} =====", flush=True)
-
-                    run_metrics = test_dnn_with_fixed_features(
-                        fixed_binary_vector=current_fixed_feature_vector,
-                        X_train_all_features=X_train_feat_all, y_train_data=y_train,
-                        X_val_all_features=X_val_feat_all, y_val_data=y_val,
-                        X_test_all_features=X_test_feat_all, y_test_data=y_test,
-                        dnn_training_params_override=current_dnn_training_params,
-                        dnn_config_id_override=dnn_id_val,
-                        class_names=class_names,
-                        test_run_name=test_run_name_current
-                    )
-
-                    if run_metrics:
-                        result_entry = {
-                            "test_name": test_run_name_current,
-                            "dnn_config_id": dnn_id_val,
-                            "epochs": epochs_val,
-                            "patience": patience_val,
-                            "batch_size": batch_size_val,
-                            "feature_set_type": base_run_name_suffix,
-                            "num_selected_features_in_set": int(np.sum(current_fixed_feature_vector)),
-                            "accuracy_test": run_metrics.get('accuracy'),
-                            "f1_macro_test": run_metrics.get('classification_report', {}).get('macro avg', {}).get('f1-score'),
-                            "training_time_seconds": run_metrics.get('training_time_seconds'),
-                            "full_metrics_test": run_metrics
-                        }
-                        all_series_results.append(result_entry)
+        if feature_source_name.lower() in ["bda", "bpso"] and LOAD_FEATURES_FROM_JSON:
+            try:
+                with open(RESULTS_JSON_PATH_MAIN_PIPELINE, 'r') as f: data = json.load(f)
+                opt_key = f"{feature_source_name.lower()}_optimization"
+                if opt_key in data and "selected_features_vector" in data[opt_key]:
+                    current_fixed_feature_vector = data[opt_key]["selected_features_vector"]
+                    if len(current_fixed_feature_vector) != DIM_FEATURES:
+                        print(f"Erro: Vetor de features de '{opt_key}' tem comprimento {len(current_fixed_feature_vector)}, esperado {DIM_FEATURES}. Usando manual.", flush=True)
+                        current_fixed_feature_vector = FIXED_FEATURE_VECTOR_MANUAL_EXAMPLE
+                        run_name_suffix_for_features = "feats_manual_fallback_len_mismatch"
                     else:
-                         print(f"AVISO: Nenhuma métrica retornada para o teste: {test_run_name_current}", flush=True)
-                    
-                    print(f"===== TESTE ({current_run_count}/{total_combinations}) FINALIZADO: {test_run_name_current} =====", flush=True)
-                    tf.keras.backend.clear_session()
-                    import gc
-                    gc.collect()
+                         print(f"Carregadas {int(np.sum(current_fixed_feature_vector))} features de '{opt_key}'.", flush=True)
+                else:
+                    print(f"Aviso: Chave '{opt_key}' não encontrada no JSON. Usando manual.", flush=True)
+                    current_fixed_feature_vector = FIXED_FEATURE_VECTOR_MANUAL_EXAMPLE
+                    run_name_suffix_for_features = "feats_manual_fallback_no_key"
+            except Exception as e:
+                print(f"ERRO ao carregar features do JSON para {feature_source_name}: {e}. Usando manual.", flush=True)
+                current_fixed_feature_vector = FIXED_FEATURE_VECTOR_MANUAL_EXAMPLE
+                run_name_suffix_for_features = "feats_manual_fallback_exception"
+        elif feature_source_name.lower() == "all_features":
+            current_fixed_feature_vector = np.ones(DIM_FEATURES, dtype=int).tolist()
+            run_name_suffix_for_features = "feats_all"
+            print(f"Usando todas as {DIM_FEATURES} features.", flush=True)
+        elif feature_source_name.lower() == "manual":
+            current_fixed_feature_vector = FIXED_FEATURE_VECTOR_MANUAL_EXAMPLE
+            run_name_suffix_for_features = "feats_manual_defined"
+            print(f"Usando vetor de features manual definido: {int(np.sum(current_fixed_feature_vector))} features.", flush=True)
+        else:
+            print(f"Fonte de feature '{feature_source_name}' desconhecida. Pulando.", flush=True)
+            continue
 
+        if current_fixed_feature_vector is None: 
+            print(f"ERRO: Vetor de características não pôde ser determinado para {feature_source_name}. Pulando.", flush=True)
+            continue
+            
+        num_selected_initial = int(np.sum(current_fixed_feature_vector))
+        if num_selected_initial == 0:
+            print(f"ERRO CRÍTICO: Nenhuma feature selecionada para {feature_source_name} (num_selected_initial = 0). Pulando esta fonte.", flush=True)
+            continue
+        print(f"Para {feature_source_name.upper()}: Usando {num_selected_initial} features para o GridSearchCV.", flush=True)
 
-    summary_file_path = os.path.join(RESULTS_DIR, "dnn_series_test_summary.json")
-    with open(summary_file_path, 'w') as f_summary:
-        json.dump(all_series_results, f_summary, indent=4)
-    print(f"\n\nResumo de todos os testes da série salvo em: {summary_file_path}", flush=True)
+        selected_indices = np.where(np.array(current_fixed_feature_vector) == 1)[0]
+        X_train_selected_for_gs = X_train_feat_all[:, selected_indices]
+        X_val_selected_for_gs = X_val_feat_all[:, selected_indices] 
 
-    if all_series_results:
-        try:
-            df_results = pd.DataFrame(all_series_results)
-            if 'full_metrics_test' in df_results.columns:
-                df_results_simplified = df_results.drop(columns=['full_metrics_test'])
-            else:
-                df_results_simplified = df_results
-            csv_summary_path = os.path.join(RESULTS_DIR, "dnn_series_test_summary.csv")
-            df_results_simplified.to_csv(csv_summary_path, index=False)
-            print(f"Resumo da série em CSV salvo em: {csv_summary_path}", flush=True)
-        except Exception as e:
-            print(f"Erro ao salvar resumo em CSV: {e}", flush=True)
-    else:
-        print("Nenhum resultado coletado na série para salvar em CSV.", flush=True)
+        param_grid_list = []
+        
+        fit_params_for_grid = {
+            'batch_size': BATCH_SIZE_LIST,
+            'epochs': EPOCHS_LIST,
+        }
+        
+        common_model_params_for_grid = {
+            'model__dropout_rate1': DROPOUT_RATE_LIST,
+            'model__dropout_rate2': DROPOUT_RATE_LIST,
+            'model__dropout_rate3': DROPOUT_RATE_LIST,
+        }
 
+        for opt_config_template in OPTIMIZER_PARAMS: 
+            for reg_config_template in REGULARIZER_PARAMS: 
+                current_grid_config = {
+                    **fit_params_for_grid, 
+                    **common_model_params_for_grid,
+                    **opt_config_template, 
+                    **reg_config_template
+                }
+                param_grid_list.append(current_grid_config)
+        
+        print(f"GridSearch param_grid construído com {len(param_grid_list)} dicionários de configuração.", flush=True)
+        if len(param_grid_list) > 0:
+             print(f"Exemplo de primeira configuração no grid (patience do ES é fixa em {FIXED_PATIENCE_ES}): {param_grid_list[0]}", flush=True)
 
-    overall_execution_time = time.time() - overall_start_time
-    print(f"\n--- Tempo Total de Execução da Série de Testes da DNN: {overall_execution_time/60:.2f} minutos ({overall_execution_time:.2f} segundos) ---", flush=True)
-    print("--- Script de Teste Autônomo da DNN em Série Finalizado ---", flush=True)
+        early_stopping_gs_callback = EarlyStopping(
+            monitor='val_loss', 
+            patience=FIXED_PATIENCE_ES,
+            restore_best_weights=True, 
+            verbose=1 
+        )
+        
+        keras_clf = KerasClassifier(
+            model=build_dnn_model, 
+            model__num_selected_features=num_selected_initial, 
+            model__num_classes=len(class_names),          
+            model__jit_compile_dnn=False,                 
+            verbose=1, 
+            callbacks=[early_stopping_gs_callback]
+        )
+
+        grid_search = GridSearchCV(
+            estimator=keras_clf, 
+            param_grid=param_grid_list, 
+            cv=2, 
+            scoring='accuracy', 
+            verbose=1,        
+            refit=True,       
+            n_jobs=1,
+            error_score='raise'      
+        )
+
+        print(f"\n--- 5. Iniciando GridSearchCV para {feature_source_name.upper()} ---", flush=True)
+        gs_start_time = time.time()
+        grid_search.fit(X_train_selected_for_gs, y_train, validation_data=(X_val_selected_for_gs, y_val))
+        
+        gs_total_time_min = (time.time() - gs_start_time) / 60
+        print(f"GridSearchCV para {feature_source_name.upper()} finalizado em {gs_total_time_min:.2f} minutos.", flush=True)
+        print(f"Melhores Parâmetros (CV): {grid_search.best_params_}")
+        print(f"Melhor Acurácia (CV): {grid_search.best_score_:.4f}")
+
+        best_model_metrics_final, final_model_train_time_sec = train_evaluate_best_model(
+            best_params_from_grid=grid_search.best_params_,
+            fixed_binary_vector=current_fixed_feature_vector,
+            X_train_all_features=X_train_feat_all, y_train_data=y_train,
+            X_val_all_features=X_val_feat_all, y_val_data=y_val, 
+            X_test_all_features=X_test_feat_all, y_test_data=y_test,
+            class_names=class_names,
+            fixed_es_patience=FIXED_PATIENCE_ES,
+            run_name_prefix=f"gs_best_{run_name_suffix_for_features}",
+            current_plots_dir=current_plots_dir
+        )
+
+        if best_model_metrics_final:
+            cv_results_df = pd.DataFrame(grid_search.cv_results_)
+            relevant_cols = [
+                col for col in cv_results_df.columns if 
+                'param_model__' in col or 
+                col in ['param_epochs', 'param_batch_size', 'mean_test_score', 'std_test_score', 'rank_test_score']
+            ]
+            cv_results_summary = cv_results_df[relevant_cols].sort_values(by='rank_test_score').to_dict('records')
+
+            run_result_entry = {
+                "feature_source": feature_source_name,
+                "num_input_features_for_gs": num_selected_initial,
+                "best_cv_score_grid": grid_search.best_score_,
+                "best_params_grid": grid_search.best_params_,
+                "fixed_early_stopping_patience": FIXED_PATIENCE_ES,
+                "grid_search_duration_minutes": gs_total_time_min,
+                "final_model_train_duration_seconds": final_model_train_time_sec,
+                "final_model_test_metrics": best_model_metrics_final,
+                "grid_cv_results_summary_top10": cv_results_summary[:10] 
+            }
+            all_gridsearch_runs_master_results.append(run_result_entry)
+        
+        del grid_search, keras_clf, cv_results_df
+        tf.keras.backend.clear_session()
+        gc.collect()
+
+    master_summary_file_path = os.path.join(RESULTS_DIR_BASE, "gridsearch_ALL_SOURCES_summary.json")
+    try:
+        class NpEncoder(json.JSONEncoder): 
+            def default(self, obj):
+                if isinstance(obj, np.integer): return int(obj)
+                if isinstance(obj, np.floating): return float(obj)
+                if isinstance(obj, np.ndarray): return obj.tolist()
+                return super(NpEncoder, self).default(obj)
+        with open(master_summary_file_path, 'w') as f:
+            json.dump(all_gridsearch_runs_master_results, f, indent=4, cls=NpEncoder)
+        print(f"\nResumo mestre de todos os GridSearchCV salvo em: {master_summary_file_path}", flush=True)
+    except Exception as e: 
+        print(f"Erro ao salvar resumo mestre JSON: {e}", flush=True)
+
+    try:
+        master_df_list = []
+        for record in all_gridsearch_runs_master_results:
+            flat_record = record.copy()
+            if 'best_params_grid' in flat_record and isinstance(flat_record['best_params_grid'], dict):
+                for k,v in flat_record['best_params_grid'].items(): 
+                    param_key = k.replace('model__', '')
+                    flat_record[f"best_param_{param_key}"] = v
+                del flat_record['best_params_grid']
+            if 'final_model_test_metrics' in flat_record and isinstance(flat_record['final_model_test_metrics'], dict):
+                for k,v in flat_record['final_model_test_metrics'].items():
+                    if not isinstance(v, (dict, list)): flat_record[f"final_metric_{k}"] = v
+                del flat_record['final_model_test_metrics']
+            if 'grid_cv_results_summary_top10' in flat_record: 
+                del flat_record['grid_cv_results_summary_top10'] 
+            master_df_list.append(flat_record)
+
+        master_df = pd.DataFrame(master_df_list)
+        master_csv_path = os.path.join(RESULTS_DIR_BASE, "gridsearch_ALL_SOURCES_summary.csv")
+        master_df.to_csv(master_csv_path, index=False)
+        print(f"Resumo mestre em CSV salvo em: {master_csv_path}", flush=True)
+    except Exception as e:
+        print(f"Erro ao salvar resumo mestre CSV: {e}", flush=True)
+
+    overall_script_duration_min = (time.time() - overall_script_start_time) / 60
+    print(f"\n--- Tempo Total de Execução do Script GridSearchCV Extendido: {overall_script_duration_min:.2f} minutos ---")
+    print("--- Script Finalizado ---")
