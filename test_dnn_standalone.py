@@ -24,7 +24,7 @@ from tensorflow.keras.callbacks import EarlyStopping
 
 # --- Configurações Globais ---
 BASE_DATA_DIR = os.path.join(current_dir, 'data')
-RESULTS_DIR_BASE = os.path.join(current_dir, 'results', 'dnn_gridsearch_custom_params_nopatience') 
+RESULTS_DIR_BASE = os.path.join(current_dir, 'results', 'dnn_gridsearch_full_cv_output_second_run') 
 RANDOM_SEED = 42
 np.random.seed(RANDOM_SEED)
 tf.random.set_seed(RANDOM_SEED)
@@ -41,10 +41,10 @@ TEST_SIZE = 0.15
 VAL_SIZE = 0.15 
 
 # --- HIPERPARÂMETROS PARA GridSearchCV ---
-EPOCHS_LIST = [150, 200, 250, 300]
+EPOCHS_LIST = [100, 150, 200, 250]
 BATCH_SIZE_LIST = [4, 8, 16, 32, 64]
-LEARNING_RATE_LIST = [0.001, 0.0005, 0.0001]
-DROPOUT_RATE_LIST = [0.1, 0.2, 0.3]
+LEARNING_RATE_LIST = [0.001, 0.005, 0.01]
+DROPOUT_RATE_LIST = [0.05, 0.1, 0.2]
 FIXED_PATIENCE_ES = 25
 
 OPTIMIZER_PARAMS = [
@@ -52,13 +52,13 @@ OPTIMIZER_PARAMS = [
 ]
 
 REGULARIZER_PARAMS = [
-    {'model__kernel_regularizer_type': [None]}, 
-    {'model__kernel_regularizer_type': ['l1'], 'model__kernel_regularizer_strength': [0.01, 0.001]},
-    {'model__kernel_regularizer_type': ['l2'], 'model__kernel_regularizer_strength': [0.01, 0.001]},
+    {'model__kernel_regularizer_type': [None]},
+    {'model__kernel_regularizer_type': ['l1'], 'model__kernel_regularizer_strength': [0.0001, 0.001, 0.01]}
+    {'model__kernel_regularizer_type': ['l2'], 'model__kernel_regularizer_strength': [0.0001, 0.001, 0.01]},
 ]
 
 # --- FONTES DE FEATURES PARA TESTAR ---
-FEATURE_SOURCES_TO_TEST = ["bda"]#, "bpso"] 
+FEATURE_SOURCES_TO_TEST = ["bda", "bpso"] 
 LOAD_FEATURES_FROM_JSON = True 
 RESULTS_JSON_PATH_MAIN_PIPELINE = os.path.join(current_dir, 'results/all_pipeline_results.json')
 FIXED_FEATURE_VECTOR_MANUAL_EXAMPLE = [1]*45 
@@ -71,7 +71,7 @@ def train_evaluate_best_model(
     X_val_all_features, y_val_data, 
     X_test_all_features, y_test_data,
     class_names, 
-    fixed_es_patience,
+    fixed_es_patience, 
     run_name_prefix="best_dnn_model", current_plots_dir="plots"
 ):
     utils_module.PLOTS_DIR = current_plots_dir 
@@ -101,7 +101,7 @@ def train_evaluate_best_model(
     current_patience_for_final_model = fixed_es_patience
 
     run_name = (f"{run_name_prefix}_opt-{best_optimizer}_lr-{best_lr:.0e}_"
-                f"reg-{str(best_reg_type).lower()}_str-{best_reg_strength if best_reg_type else 0:.0e}_"
+                f"reg-{str(best_reg_type).lower() if best_reg_type else 'none'}_str-{best_reg_strength if best_reg_type else 0:.0e}_"
                 f"drp-{best_dropout1:.1f}-{best_dropout2:.1f}-{best_dropout3:.1f}_"
                 f"ep-{best_epochs}_bs-{best_batch_size}_patFIX-{current_patience_for_final_model}").replace('.', '_')
 
@@ -127,7 +127,7 @@ def train_evaluate_best_model(
 
     early_stopping_final = EarlyStopping(
         monitor='val_loss', 
-        patience=current_patience_for_final_model,
+        patience=current_patience_for_final_model, 
         restore_best_weights=True, 
         verbose=1
     )
@@ -139,7 +139,7 @@ def train_evaluate_best_model(
         batch_size=best_batch_size,
         validation_data=(X_val_selected, y_val_data), 
         callbacks=[early_stopping_final], 
-        verbose=1
+        verbose=2
     )
     training_time = time.time() - start_train_time
     print(f"Treinamento finalizado em {training_time:.2f} segundos.")
@@ -199,6 +199,7 @@ if __name__ == "__main__":
 
         current_results_dir = os.path.join(RESULTS_DIR_BASE, f"features_{feature_source_name}")
         current_plots_dir = os.path.join(current_results_dir, 'plots')
+        os.makedirs(current_results_dir, exist_ok=True)
         os.makedirs(current_plots_dir, exist_ok=True)
         utils_module.PLOTS_DIR = current_plots_dir 
 
@@ -280,29 +281,28 @@ if __name__ == "__main__":
 
         early_stopping_gs_callback = EarlyStopping(
             monitor='val_loss', 
-            patience=FIXED_PATIENCE_ES,
+            patience=FIXED_PATIENCE_ES, 
             restore_best_weights=True, 
             verbose=1 
         )
         
-        keras_clf = KerasClassifier(
+        keras_clf = KerasClassifier( 
             model=build_dnn_model, 
             model__num_selected_features=num_selected_initial, 
             model__num_classes=len(class_names),          
             model__jit_compile_dnn=False,                 
-            verbose=0, 
-            callbacks=[early_stopping_gs_callback]
+            verbose=1, 
+            callbacks=[early_stopping_gs_callback] 
         )
 
         grid_search = GridSearchCV(
             estimator=keras_clf, 
             param_grid=param_grid_list, 
-            cv=2, 
+            cv=3, 
             scoring='accuracy', 
             verbose=1,        
             refit=True,       
-            n_jobs=1,
-            error_score='raise'      
+            n_jobs=1          
         )
 
         print(f"\n--- 5. Iniciando GridSearchCV para {feature_source_name.upper()} ---", flush=True)
@@ -314,6 +314,24 @@ if __name__ == "__main__":
         print(f"Melhores Parâmetros (CV): {grid_search.best_params_}")
         print(f"Melhor Acurácia (CV): {grid_search.best_score_:.4f}")
 
+        # Salvar cv_results_ completo para esta fonte de features
+        cv_results_df = pd.DataFrame(grid_search.cv_results_)
+        cv_results_path = os.path.join(current_results_dir, f"cv_results_{feature_source_name}.csv")
+        try:
+            cv_results_df.to_csv(cv_results_path, index=False)
+            print(f"Resultados completos do CV salvos em: {cv_results_path}", flush=True)
+        except Exception as e:
+            print(f"Erro ao salvar cv_results CSV para {feature_source_name}: {e}", flush=True)
+
+        # Preparar cv_results_summary para o JSON mestre (ordenado por rank)
+        relevant_cols_for_summary = [
+            col for col in cv_results_df.columns if 
+            col.startswith('param_') or 
+            col in ['mean_test_score', 'std_test_score', 'rank_test_score', 'mean_fit_time', 'std_fit_time']
+        ]
+        cv_results_summary_for_json = cv_results_df[relevant_cols_for_summary].sort_values(by='rank_test_score').to_dict('records')
+
+
         best_model_metrics_final, final_model_train_time_sec = train_evaluate_best_model(
             best_params_from_grid=grid_search.best_params_,
             fixed_binary_vector=current_fixed_feature_vector,
@@ -321,30 +339,22 @@ if __name__ == "__main__":
             X_val_all_features=X_val_feat_all, y_val_data=y_val, 
             X_test_all_features=X_test_feat_all, y_test_data=y_test,
             class_names=class_names,
-            fixed_es_patience=FIXED_PATIENCE_ES,
+            fixed_es_patience=FIXED_PATIENCE_ES, 
             run_name_prefix=f"gs_best_{run_name_suffix_for_features}",
             current_plots_dir=current_plots_dir
         )
 
         if best_model_metrics_final:
-            cv_results_df = pd.DataFrame(grid_search.cv_results_)
-            relevant_cols = [
-                col for col in cv_results_df.columns if 
-                'param_model__' in col or 
-                col in ['param_epochs', 'param_batch_size', 'mean_test_score', 'std_test_score', 'rank_test_score']
-            ]
-            cv_results_summary = cv_results_df[relevant_cols].sort_values(by='rank_test_score').to_dict('records')
-
             run_result_entry = {
                 "feature_source": feature_source_name,
                 "num_input_features_for_gs": num_selected_initial,
                 "best_cv_score_grid": grid_search.best_score_,
                 "best_params_grid": grid_search.best_params_,
-                "fixed_early_stopping_patience": FIXED_PATIENCE_ES,
+                "fixed_early_stopping_patience": FIXED_PATIENCE_ES, 
                 "grid_search_duration_minutes": gs_total_time_min,
                 "final_model_train_duration_seconds": final_model_train_time_sec,
                 "final_model_test_metrics": best_model_metrics_final,
-                "grid_cv_results_summary_top10": cv_results_summary[:10] 
+                "grid_cv_results_summary_sorted": cv_results_summary_for_json 
             }
             all_gridsearch_runs_master_results.append(run_result_entry)
         
@@ -379,16 +389,16 @@ if __name__ == "__main__":
                 for k,v in flat_record['final_model_test_metrics'].items():
                     if not isinstance(v, (dict, list)): flat_record[f"final_metric_{k}"] = v
                 del flat_record['final_model_test_metrics']
-            if 'grid_cv_results_summary_top10' in flat_record: 
-                del flat_record['grid_cv_results_summary_top10'] 
+            if 'grid_cv_results_summary_sorted' in flat_record:
+                del flat_record['grid_cv_results_summary_sorted'] 
             master_df_list.append(flat_record)
 
         master_df = pd.DataFrame(master_df_list)
-        master_csv_path = os.path.join(RESULTS_DIR_BASE, "gridsearch_ALL_SOURCES_summary.csv")
+        master_csv_path = os.path.join(RESULTS_DIR_BASE, "gridsearch_ALL_SOURCES_summary_simplified.csv")
         master_df.to_csv(master_csv_path, index=False)
-        print(f"Resumo mestre em CSV salvo em: {master_csv_path}", flush=True)
+        print(f"Resumo mestre simplificado em CSV salvo em: {master_csv_path}", flush=True)
     except Exception as e:
-        print(f"Erro ao salvar resumo mestre CSV: {e}", flush=True)
+        print(f"Erro ao salvar resumo mestre CSV simplificado: {e}", flush=True)
 
     overall_script_duration_min = (time.time() - overall_script_start_time) / 60
     print(f"\n--- Tempo Total de Execução do Script GridSearchCV Extendido: {overall_script_duration_min:.2f} minutos ---")
