@@ -4,7 +4,7 @@ pandas==2.2.3
 PyWavelets==1.8.0
 scikit-learn==1.5.2
 scipy==1.15.3
-tensorflow==2.19.0
+tensorflow[and-cuda]
 tqdm==4.67.1
 seaborn==0.13.2
 scikeras==0.13.0
