@@ -1,0 +1,4 @@
+feature_source,num_input_features_for_gs,best_cv_score_grid,fixed_early_stopping_patience,grid_search_duration_minutes,final_model_train_duration_seconds,best_param_batch_size,best_param_epochs,best_param_dropout_rate1,best_param_dropout_rate2,best_param_dropout_rate3,best_param_kernel_regularizer_strength,best_param_kernel_regularizer_type,best_param_learning_rate,best_param_optimizer_name,final_metric_accuracy,final_metric_num_selected_features,final_metric_training_time_seconds,final_metric_fixed_early_stopping_patience
+bda,19,0.9523809523809523,25,375.6582238912582,86.3565456867218,16,300,0.1,0.1,0.1,0.01,l2,0.001,adam,0.9333333333333333,19,86.3565456867218,25
+bpso,24,0.9285714285714286,25,381.30160155296323,77.23023295402527,16,250,0.1,0.1,0.1,,,0.001,adam,1.0,24,77.23023295402527,25
+all_features,45,0.8952380952380953,25,400.1823608279228,49.74314022064209,32,250,0.1,0.1,0.1,,,0.001,adam,0.9111111111111111,45,49.74314022064209,25

@@ -41,24 +41,26 @@ TEST_SIZE = 0.15
 VAL_SIZE = 0.15 
 
 # --- HIPERPARÂMETROS PARA GridSearchCV ---
-EPOCHS_LIST = [200, 250]  # Ou as listas que você estava usando, ex: [150, 200, 250]
-BATCH_SIZE_LIST = [32, 64] # Ex: [16, 32, 64]
-LEARNING_RATE_LIST = [0.001] # Ex: [0.001, 0.0005, 0.0001]
-DROPOUT_RATE_LIST = [0.1] # Ex: [0.1, 0.2, 0.3, 0.4]
+EPOCHS_LIST = [200, 250, 300]
+BATCH_SIZE_LIST = [16, 32, 64]
+LEARNING_RATE_LIST = [0.001, 0.0005, 0.0001]
+DROPOUT_RATE_LIST = [0.1]
 FIXED_PATIENCE_ES = 25
 
 OPTIMIZER_PARAMS = [
     {'model__optimizer_name': ['adam'], 'model__learning_rate': LEARNING_RATE_LIST},
-    #{'model__optimizer_name': ['sgd'], 'model__learning_rate': LEARNING_RATE_LIST, 'model__momentum': [0.9]},
-    #{'model__optimizer_name': ['rmsprop'], 'model__learning_rate': LEARNING_RATE_LIST},
+    {'model__optimizer_name': ['sgd'], 'model__learning_rate': LEARNING_RATE_LIST, 'model__momentum': [0.9]},
+    {'model__optimizer_name': ['rmsprop'], 'model__learning_rate': LEARNING_RATE_LIST},
 ]
 
 REGULARIZER_PARAMS = [
-    {'model__kernel_regularizer_type': [None]},
+    {'model__kernel_regularizer_type': [None]}, 
+    {'model__kernel_regularizer_type': ['l1'], 'model__kernel_regularizer_strength': [0.01, 0.001]},
+    {'model__kernel_regularizer_type': ['l2'], 'model__kernel_regularizer_strength': [0.01, 0.001]},
 ]
 
 # --- FONTES DE FEATURES PARA TESTAR ---
-FEATURE_SOURCES_TO_TEST = ["bda", "bpso", "all_features"] 
+FEATURE_SOURCES_TO_TEST = ["bda", "bpso"] 
 LOAD_FEATURES_FROM_JSON = True 
 RESULTS_JSON_PATH_MAIN_PIPELINE = os.path.join(current_dir, 'results/all_pipeline_results.json')
 FIXED_FEATURE_VECTOR_MANUAL_EXAMPLE = [1]*45 
@@ -290,7 +292,7 @@ if __name__ == "__main__":
             model__num_selected_features=num_selected_initial, 
             model__num_classes=len(class_names),          
             model__jit_compile_dnn=False,                 
-            verbose=1, 
+            verbose=0, 
             callbacks=[early_stopping_gs_callback]
         )
 
