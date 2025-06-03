@@ -53,7 +53,7 @@ OPTIMIZER_PARAMS = [
 
 REGULARIZER_PARAMS = [
     {'model__kernel_regularizer_type': [None]},
-    {'model__kernel_regularizer_type': ['l1'], 'model__kernel_regularizer_strength': [0.0001, 0.001, 0.01]}
+    {'model__kernel_regularizer_type': ['l1'], 'model__kernel_regularizer_strength': [0.0001, 0.001, 0.01]},
     {'model__kernel_regularizer_type': ['l2'], 'model__kernel_regularizer_strength': [0.0001, 0.001, 0.01]},
 ]
 
