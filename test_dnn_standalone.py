@@ -41,16 +41,14 @@ TEST_SIZE = 0.15
 VAL_SIZE = 0.15 
 
 # --- HIPERPARÂMETROS PARA GridSearchCV ---
-EPOCHS_LIST = [200, 250, 300]
-BATCH_SIZE_LIST = [16, 32, 64]
+EPOCHS_LIST = [150, 200, 250, 300]
+BATCH_SIZE_LIST = [4, 8, 16, 32, 64]
 LEARNING_RATE_LIST = [0.001, 0.0005, 0.0001]
-DROPOUT_RATE_LIST = [0.1]
+DROPOUT_RATE_LIST = [0.1, 0.2, 0.3]
 FIXED_PATIENCE_ES = 25
 
 OPTIMIZER_PARAMS = [
     {'model__optimizer_name': ['adam'], 'model__learning_rate': LEARNING_RATE_LIST},
-    {'model__optimizer_name': ['sgd'], 'model__learning_rate': LEARNING_RATE_LIST, 'model__momentum': [0.9]},
-    {'model__optimizer_name': ['rmsprop'], 'model__learning_rate': LEARNING_RATE_LIST},
 ]
 
 REGULARIZER_PARAMS = [
@@ -60,7 +58,7 @@ REGULARIZER_PARAMS = [
 ]
 
 # --- FONTES DE FEATURES PARA TESTAR ---
-FEATURE_SOURCES_TO_TEST = ["bda", "bpso"] 
+FEATURE_SOURCES_TO_TEST = ["bda"]#, "bpso"] 
 LOAD_FEATURES_FROM_JSON = True 
 RESULTS_JSON_PATH_MAIN_PIPELINE = os.path.join(current_dir, 'results/all_pipeline_results.json')
 FIXED_FEATURE_VECTOR_MANUAL_EXAMPLE = [1]*45 
