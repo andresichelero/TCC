@@ -54,12 +54,12 @@ TEST_SIZE = 0.15
 VAL_SIZE = 0.15 # Usado dentro da função de fitness e para otimização
 
 # Parâmetros da DNN para Fitness e Treino Final
-DNN_TRAINING_PARAMS_FITNESS = {'epochs': 200, 'batch_size': 32, 'patience': 25} # Para fitness (mais rápido)
+DNN_TRAINING_PARAMS_FITNESS = {'epochs': 250, 'batch_size': 32, 'patience': 25} # Para fitness (mais rápido)
 DNN_TRAINING_PARAMS_FINAL = {'epochs': 250, 'batch_size': 32, 'patience': 25} # Para treino final (mais robusto)
 # Foi usado EarlyStopping com val_split para o treino final.
 
 # Parâmetros dos Otimizadores
-N_AGENTS_OPTIMIZERS = 20 # População/Partículas
+N_AGENTS_OPTIMIZERS = 15 # População/Partículas
 T_MAX_ITER_OPTIMIZERS = 75 # Iterações (Artigo sugere 100)
 
 # Parâmetros Fitness

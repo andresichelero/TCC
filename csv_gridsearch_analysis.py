@@ -7,20 +7,13 @@ import numpy as np
 
 # --- Configurações ---
 # Caminho para o arquivo JSON principal de resumo
-JSON_MASTER_RESULTS_FILE = 'results/dnn_gridsearch_full_cv_output/gridsearch_ALL_SOURCES_summary.json' # Assumindo que está no mesmo dir do script ou ajuste
+JSON_MASTER_RESULTS_FILE = 'results/dnn_gridsearch_full_cv_output/gridsearch_ALL_SOURCES_summary.json'
+BASE_RESULTS_DIR_FROM_SCRIPT = 'results/dnn_gridsearch_full_cv_output'
 
-# Diretório base onde os CSVs individuais (cv_results_bda.csv, etc.) e o JSON estão.
-# O script test_dnn_standalone.py salva os CSVs em subdiretórios por feature_source.
-# Ex: results/dnn_gridsearch_full_cv_output/features_bda/cv_results_bda.csv
-# E o JSON mestre em: results/dnn_gridsearch_full_cv_output/gridsearch_ALL_SOURCES_summary.json
-# Vamos assumir que este script de análise está no diretório PAI de 'results'.
-BASE_RESULTS_DIR_FROM_SCRIPT = 'results/dnn_gridsearch_full_cv_output' # Ajuste se o seu script de teste salvou em outro lugar
-
-OUTPUT_PLOTS_DIR = 'results/analysis_plots_cv_full_data' # Novo diretório para esta análise
+OUTPUT_PLOTS_DIR = 'results/analysis_plots_cv_full_data'
 os.makedirs(OUTPUT_PLOTS_DIR, exist_ok=True)
 
 # Hiperparâmetros a serem analisados
-# Estes são os nomes das colunas como aparecem após o 'param_' prefixo no cv_results_
 PARAMS_TO_ANALYZE = {
     'numeric': [
         'batch_size',
@@ -32,20 +25,15 @@ PARAMS_TO_ANALYZE = {
     'categorical': [
         'model__optimizer_name',
         'model__kernel_regularizer_type',
-        # 'model__momentum' # Adicionar se testado e relevante
     ]
 }
 
 def load_data_from_csv(feature_source_name):
     """Tenta carregar os resultados do CV de um arquivo CSV individual."""
-    # Constrói o caminho esperado para o arquivo CSV
-    # Ex: results/dnn_gridsearch_full_cv_output/features_bda/cv_results_bda.csv
     csv_path = os.path.join(BASE_RESULTS_DIR_FROM_SCRIPT, f"features_{feature_source_name}", f"cv_results_{feature_source_name}.csv")
     try:
         df = pd.read_csv(csv_path)
         print(f"Dados carregados com sucesso do CSV: {csv_path}")
-        # Renomear colunas param_* para remover o prefixo para facilitar nos plots
-        # O Pandas já carrega as colunas do cv_results_ com o prefixo 'param_'
         df.columns = [col.replace('param_model__', 'model__').replace('param_', '') if col.startswith('param_') else col for col in df.columns]
         return df
     except FileNotFoundError:
@@ -64,12 +52,9 @@ def load_data_from_json_summary(feature_source_name_filter):
         
         for run_data in all_runs_data:
             if run_data.get("feature_source") == feature_source_name_filter:
-                # A chave esperada é 'grid_cv_results_summary_sorted'
                 cv_results_list_of_dicts = run_data.get("grid_cv_results_summary_sorted")
                 if cv_results_list_of_dicts:
                     df = pd.DataFrame(cv_results_list_of_dicts)
-                    # As colunas no JSON já devem estar como "param_batch_size", etc.
-                    # Renomear para consistência com o carregamento do CSV
                     df.columns = [col.replace('param_model__', 'model__').replace('param_', '') if col.startswith('param_') else col for col in df.columns]
                     print(f"Dados carregados com sucesso do JSON para {feature_source_name_filter}.")
                     return df
@@ -85,10 +70,6 @@ def load_data_from_json_summary(feature_source_name_filter):
         print(f"ERRO inesperado ao carregar dados do JSON para {feature_source_name_filter}: {e}")
         return pd.DataFrame()
 
-# Funções de plotagem (plot_sensitivity, plot_boxplot_comparison, plot_heatmap_interaction, plot_score_vs_time)
-# As funções de plotagem permanecem as mesmas da sua versão anterior (artefato analise_grafica_gridsearch_cv_log_melhorado)
-# Vou incluí-las aqui para completude.
-
 def plot_sensitivity(df, param_name, feature_source_name, output_dir, hue_param=None):
     col_param_name = param_name 
     
@@ -96,13 +77,11 @@ def plot_sensitivity(df, param_name, feature_source_name, output_dir, hue_param=
         print(f"DataFrame vazio ou parâmetro '{col_param_name}' não encontrado para {feature_source_name} em plot_sensitivity.")
         return
 
-    plt.figure(figsize=(12, 7)) # Aumentado um pouco
+    plt.figure(figsize=(12, 7))
     
     df_copy = df.copy()
     try:
-        # Certificar que a coluna do parâmetro principal é numérica
         df_copy[col_param_name] = pd.to_numeric(df_copy[col_param_name], errors='coerce')
-        # Certificar que mean_test_score é numérico
         df_copy['mean_test_score'] = pd.to_numeric(df_copy['mean_test_score'], errors='coerce')
         df_copy.dropna(subset=[col_param_name, 'mean_test_score'], inplace=True)
     except Exception as e:
@@ -154,7 +133,7 @@ def plot_boxplot_comparison(df, param_name, feature_source_name, output_dir):
         print(f"DataFrame vazio ou parâmetro '{col_param_name}' não encontrado para {feature_source_name} em plot_boxplot_comparison.")
         return
 
-    plt.figure(figsize=(10, 7)) # Aumentado um pouco
+    plt.figure(figsize=(10, 7))
     
     # Tratar NaNs na coluna do parâmetro antes de plotar
     df_copy = df.copy()
@@ -246,7 +225,7 @@ def plot_heatmap_interaction(df, param1_name, param2_name, feature_source_name, 
         print(f"Pivot table vazia para {col_param1_name} vs {col_param2_name} em {feature_source_name}.")
         return
 
-    plt.figure(figsize=(12, 9)) # Aumentado um pouco
+    plt.figure(figsize=(12, 9))
     sns.heatmap(pivot_df, annot=True, fmt=".4f", cmap="viridis_r", linewidths=.5, cbar_kws={'label': 'Acurácia Média (CV)'})
     plt.title(f'Heatmap: Score para {col_param1_name} vs {col_param2_name}\nFonte: {feature_source_name} (Max/Mean Score Agrupado)', fontsize=14)
     plt.xlabel(col_param2_name, fontsize=12)
@@ -286,7 +265,7 @@ def plot_score_vs_time(df, feature_source_name, output_dir):
         print(f"DataFrame vazio após tratamento de NaNs para plot_score_vs_time ({feature_source_name}).")
         return
 
-    plt.figure(figsize=(12, 7)) # Aumentado
+    plt.figure(figsize=(12, 7))
     hue_col_processed = 'model__optimizer_name' 
     if hue_col_processed not in df_copy.columns:
         hue_col_processed = None 
@@ -311,14 +290,12 @@ def plot_score_vs_time(df, feature_source_name, output_dir):
 # --- Loop Principal de Análise ---
 FEATURE_SOURCES_TO_PROCESS = ['bda', 'bpso'] 
 
-# Nomes de colunas como esperamos que estejam no DataFrame após o processamento em load_data_from_csv/json
-# (ou seja, 'param_' removido, 'model__' mantido para params do modelo)
 PARAMS_TO_ANALYZE_PROCESSED = {
     'numeric': [
         'batch_size',
         'epochs',
         'model__learning_rate', 
-        'model__dropout_rate1', # Assumindo que dropout_rate1 é representativo ou você pode adicionar _rate2, _rate3
+        'model__dropout_rate1',
         'model__kernel_regularizer_strength'
     ],
     'categorical': [
@@ -330,7 +307,6 @@ PARAMS_TO_ANALYZE_PROCESSED = {
 for fs_name in FEATURE_SOURCES_TO_PROCESS:
     print(f"\n\n--- Processando Fonte de Features: {fs_name.upper()} ---")
     
-    # Tentar carregar do CSV primeiro
     df_cv_results = load_data_from_csv(fs_name)
     
     if df_cv_results is None or df_cv_results.empty:
@@ -386,7 +362,7 @@ for fs_name in FEATURE_SOURCES_TO_PROCESS:
                                  'model__kernel_regularizer_type', 
                                  'model__kernel_regularizer_strength', 
                                  f"{fs_name}", 
-                                 fs_output_dir) # Nome do arquivo será heatmap_type_vs_strength
+                                 fs_output_dir)
     else:
         print(f"Não foi possível gerar heatmap de regularização para {fs_name}: colunas ausentes.")
 
