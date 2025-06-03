@@ -292,7 +292,7 @@ if __name__ == "__main__":
             model__num_classes=len(class_names),          
             model__jit_compile_dnn=False,                 
             verbose=1, 
-            callbacks=[early_stopping_gs_callback] 
+            callbacks=[early_stopping_gs_callback],
         )
 
         grid_search = GridSearchCV(
@@ -302,7 +302,8 @@ if __name__ == "__main__":
             scoring='accuracy', 
             verbose=1,        
             refit=True,       
-            n_jobs=1          
+            n_jobs=1,
+            error_score='raise'
         )
 
         print(f"\n--- 5. Iniciando GridSearchCV para {feature_source_name.upper()} ---", flush=True)
