@@ -8,11 +8,22 @@ from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 import pandas as pd
 import seaborn as sns 
+import json
 
 # Flag global para controlar salvamento de plots (para não mostrar interativamente em execuções longas)
 # E diretório para salvar
 SAVE_PLOTS = True # Mudar para False se quiser ver interativamente (pode pausar o script)
 PLOTS_DIR = "results/plots"
+class NumpyEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super(NumpyEncoder, self).default(obj)
+
 
 def calculate_specificity(y_true, y_pred, class_label, num_classes):
     """

@@ -1,155 +1,158 @@
-# Função de aptidão unificada
 # src/fitness_function.py
 import numpy as np
-import tensorflow as tf
-from tensorflow.keras.callbacks import EarlyStopping
-try:
-    from .dnn_model import build_dnn_model
-    from .utils import plot_dnn_training_history # Para plotar opcionalmente
-except ImportError:
-    from dnn_model import build_dnn_model
-    from utils import plot_dnn_training_history
 import gc
-
-# Contador global para controlar o plot da fitness (apenas para depuração)
-FITNESS_CALL_COUNT = 0
-MAX_FITNESS_PLOTS_PER_RUN = 1 # Quantos históricos de DNN da fitness plotar por execução do otimizador
-
-def reset_fitness_call_count():
-    global FITNESS_CALL_COUNT
-    FITNESS_CALL_COUNT = 0
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.model_selection import cross_val_score, StratifiedKFold
 
 def evaluate_fitness(binary_feature_vector,
-                     X_train_all_features, y_train,
-                     X_val_all_features, y_val,
-                     dnn_training_params={'epochs': 120, 'batch_size': 64, 'patience': 20},
-                     alpha=0.99, beta=0.01, verbose=0, optimizer_name="optimizer", current_iter=0, agent_idx=0, plot_this_fitness_dnn_history=False):
+                     X_train_all_features,
+                     y_train,
+                     alpha, # Peso para a taxa de erro
+                     beta,  # Peso para o número de características
+                     verbose_level=0 # Para logs internos da função de fitness, se necessário
+                     ):
     """
-    Avalia a aptidão de um subconjunto de características binário.
+    Avalia a aptidão de um subconjunto de características binário usando KNN e validação cruzada.
     Menor valor de fitness é melhor.
     Args:
         binary_feature_vector (np.ndarray): Vetor binário de seleção (0s e 1s).
         X_train_all_features (np.ndarray): Matriz de características de treino completa.
         y_train (np.ndarray): Rótulos de treino.
-        X_val_all_features (np.ndarray): Matriz de características de validação completa.
-        y_val (np.ndarray): Rótulos de validação.
-        dnn_training_params (dict): Parâmetros de treino da DNN (epochs, batch_size, patience).
-        alpha (float): Peso para a taxa de erro.
-        beta (float): Peso para o número de características.
-        verbose (int): Nível de verbosidade para o treinamento do Keras (0, 1 ou 2).
+        alpha (float): Peso para a taxa de erro na fórmula de fitness.
+        beta (float): Peso para a razão de características na fórmula de fitness.
+        verbose_level (int): Nível de verbosidade para logs internos.
     Returns:
         float: Valor de fitness (menor é melhor).
     """
-    global FITNESS_CALL_COUNT
-    selected_indices = np.where(binary_feature_vector == 1)[0] # Obter índices
+    selected_indices = np.where(binary_feature_vector == 1)[0]
     num_selected = len(selected_indices)
     total_num_features_available = len(binary_feature_vector)
 
     # Penalidade se nenhuma característica for selecionada
     if num_selected == 0:
-        return 1.0 * alpha + 1.0 * beta # Fitness máximo (pior) -> erro max + num_features max
+        # Retorna o pior fitness possível: erro máximo (1.0) e razão de features máxima (1.0)
+        return alpha * 1.0 + beta * 1.0
 
-    # Seleciona as características
     X_train_selected = X_train_all_features[:, selected_indices]
-    X_val_selected = X_val_all_features[:, selected_indices]
 
-    # Limpa a sessão Keras para evitar acúmulo de modelos/gráficos na memória
-    tf.keras.backend.clear_session()
+    # Verifica se, após a seleção, ainda temos alguma feature.
+    # Isso é um pouco redundante com num_selected == 0, mas é uma boa verificação.
+    if X_train_selected.shape[1] == 0:
+        return alpha * 1.0 + beta * 1.0
 
-    # Constrói e compila a DNN
-    model = build_dnn_model(num_selected_features=num_selected, num_classes=len(np.unique(y_train)),
-                            jit_compile_dnn=False)
+    # Configuração do KNN e Validação Cruzada
+    # O artigo menciona KNN com 10-fold cross-validation.
+    # k=5 é um valor comum para n_neighbors, o artigo não especifica.
+    knn = KNeighborsClassifier(n_neighbors=5)
+    
+    n_folds = 10
+    # É crucial usar StratifiedKFold para problemas de classificação para manter a proporção das classes.
+    # O dataset Bonn tem 100 amostras por classe (A, D, E).
+    # Após o split inicial (e.g., 80/20), o X_train terá ~80 amostras de cada classe (se for balanceado).
+    # O y_train para os otimizadores é derivado do X_train_p, que é 80% - VAL_SIZE do total.
+    # Ex: Total 300 -> X_train_p (antes da extração de features) é ~ (300 * (1 - 0.20 - 0.15)) = 300 * 0.65 = 195.
+    # Se balanceado, ~65 amostras por classe. Isso é suficiente para 10 folds.
+    
+    min_samples_per_class_in_ytrain = np.min(np.bincount(y_train))
+    
+    if min_samples_per_class_in_ytrain < n_folds:
+        if verbose_level > 0:
+            print(f"Fitness Warning: Smallest class in y_train has {min_samples_per_class_in_ytrain} samples, "
+                  f"which is less than n_folds={n_folds}. Adjusting n_folds to {min_samples_per_class_in_ytrain}.")
+        # Ajusta n_folds se for maior que o número de amostras na menor classe
+        # A CV ainda requer pelo menos 2 amostras por classe para n_folds >= 2.
+        if min_samples_per_class_in_ytrain < 2 : # Não é possível fazer CV
+            if verbose_level > 0:
+                print("Fitness Error: Smallest class has < 2 samples. Cannot perform CV. Returning max fitness.")
+            return alpha * 1.0 + beta * 1.0
+        n_folds = min_samples_per_class_in_ytrain
 
-    # Define Early Stopping
-    early_stopping = EarlyStopping(
-        monitor='val_loss',
-        patience=dnn_training_params.get('patience', 30),
-        restore_best_weights=True,
-        verbose=verbose
-    )
 
-    # Treina a DNN
-    history_obj = model.fit(
-        X_train_selected, y_train,
-        epochs=dnn_training_params.get('epochs', 120),
-        batch_size=dnn_training_params.get('batch_size', 64),
-        validation_data=(X_val_selected, y_val),
-        callbacks=[early_stopping],
-        verbose=verbose # 0 para menos output durante treino da fitness
-    )
+    # Usar random_state para reprodutibilidade da divisão da validação cruzada
+    cv_splitter = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=42)
 
-    # Plot opcional do histórico desta DNN específica
-    # Controlado externamente para não plotar todas as vezes
-    if plot_this_fitness_dnn_history and FITNESS_CALL_COUNT < MAX_FITNESS_PLOTS_PER_RUN:
-        plot_title = f"Fitness DNN: {optimizer_name} - Iter {current_iter}, Agente {agent_idx} ({num_selected} feats)"
-        plot_filename = f"fitness_dnn_{optimizer_name}_iter{current_iter}_agent{agent_idx}.png"
-        plot_dnn_training_history(history_obj.history, title=plot_title, filename=plot_filename)
-        FITNESS_CALL_COUNT += 1
+    try:
+        # cross_val_score retorna um array de scores para cada fold.
+        # O scoring padrão para classificadores é 'accuracy'.
+        accuracies = cross_val_score(knn, X_train_selected, y_train, cv=cv_splitter, scoring='accuracy')
+        accuracy = np.mean(accuracies)
+    except ValueError as e:
+        # Isso pode acontecer se, por exemplo, uma dobra da CV acabar com apenas uma classe.
+        if verbose_level > 0:
+            print(f"Fitness Error: ValueError during cross_val_score for KNN: {e}. "
+                  f"Num selected features: {num_selected}. Returning max fitness.")
+        return alpha * 1.0 + beta * 1.0 # Pior fitness
 
-    # Avalia no conjunto de validação (usando os melhores pesos restaurados pelo EarlyStopping)
-    loss, accuracy = model.evaluate(X_val_selected, y_val, verbose=verbose)
     error_rate = 1.0 - accuracy
 
-    # Calcula o fitness
-    # Fitness = alpha * error_rate + beta * (num_selected / total_num_features)
+    # Calcula a razão de características selecionadas
     feature_ratio = num_selected / total_num_features_available
+
+    # Calcula o fitness final
     fitness = alpha * error_rate + beta * feature_ratio
 
-    # Libera memória do modelo explicitamente
-    del model
-    del history_obj
+    # Limpeza de memória (pode ser menos crítico com KNN do que com TensorFlow/Keras)
+    del knn
+    del X_train_selected
     gc.collect()
-    gc.collect()
+
     return fitness
 
 if __name__ == '__main__':
     # Exemplo de uso com dados dummy
-    N_TRAIN_SAMPLES = 100
-    N_VAL_SAMPLES = 20
-    N_TOTAL_FEATURES = 45
-    N_CLASSES = 3
+    N_TRAIN_SAMPLES_DUMMY = 150 # Suficiente para 10-fold CV
+    N_TOTAL_FEATURES_DUMMY = 45
+    N_CLASSES_DUMMY = 3
 
-    # Gerar dados dummy
-    X_train_dummy = np.random.rand(N_TRAIN_SAMPLES, N_TOTAL_FEATURES)
-    y_train_dummy = np.random.randint(0, N_CLASSES, N_TRAIN_SAMPLES)
-    X_val_dummy = np.random.rand(N_VAL_SAMPLES, N_TOTAL_FEATURES)
-    y_val_dummy = np.random.randint(0, N_CLASSES, N_VAL_SAMPLES)
+    # Gerar dados dummy com distribuição de classes que permita 10-fold CV
+    y_train_dummy = np.concatenate([
+        np.zeros(N_TRAIN_SAMPLES_DUMMY // N_CLASSES_DUMMY, dtype=int),
+        np.ones(N_TRAIN_SAMPLES_DUMMY // N_CLASSES_DUMMY, dtype=int),
+        np.full(N_TRAIN_SAMPLES_DUMMY - 2 * (N_TRAIN_SAMPLES_DUMMY // N_CLASSES_DUMMY), 2, dtype=int)
+    ])
+    np.random.shuffle(y_train_dummy) # Embaralhar para garantir
+    X_train_dummy = np.random.rand(N_TRAIN_SAMPLES_DUMMY, N_TOTAL_FEATURES_DUMMY)
+
+
+    print(f"Dados dummy: X_train_dummy shape: {X_train_dummy.shape}, y_train_dummy shape: {y_train_dummy.shape}")
+    print(f"Contagem de classes em y_train_dummy: {np.bincount(y_train_dummy)}")
+
 
     # Vetor de características binário de exemplo (selecionando as primeiras 10 features)
-    example_binary_vector = np.zeros(N_TOTAL_FEATURES, dtype=int)
-    example_binary_vector[:10] = 1
-    print(f"Exemplo de vetor binário (primeiras 10 selecionadas):\n{example_binary_vector}")
+    example_binary_vector_knn = np.zeros(N_TOTAL_FEATURES_DUMMY, dtype=int)
+    example_binary_vector_knn[:10] = 1
+    print(f"\nExemplo de vetor binário (primeiras 10 selecionadas):\n{example_binary_vector_knn}")
 
-    dnn_params_test = {'epochs': 5, 'batch_size': 16, 'patience': 2} # Menos épocas para teste rápido
+    alpha_test = 0.99
+    beta_test = 0.01
 
-    print("\nAvaliando fitness (verbose=1 para output do Keras)...")
-    fitness_value = evaluate_fitness(
-        example_binary_vector,
+    print("\nAvaliando fitness com KNN (verbose_level=1)...")
+    fitness_value_knn = evaluate_fitness(
+        example_binary_vector_knn,
         X_train_dummy, y_train_dummy,
-        X_val_dummy, y_val_dummy,
-        dnn_training_params=dnn_params_test,
-        alpha=0.99, beta=0.01,
-        verbose=1 # 0 para silenciar o output do Keras
+        alpha=alpha_test, beta=beta_test,
+        verbose_level=1
     )
-    print(f"\nFitness calculado: {fitness_value:.4f}")
+    print(f"\nFitness calculado com KNN: {fitness_value_knn:.4f}")
 
-    print("\nTestando com nenhuma feature selecionada...")
-    no_feature_vector = np.zeros(N_TOTAL_FEATURES, dtype=int)
-    fitness_no_features = evaluate_fitness(
-        no_feature_vector,
+    print("\nTestando com nenhuma feature selecionada (KNN)...")
+    no_feature_vector_knn = np.zeros(N_TOTAL_FEATURES_DUMMY, dtype=int)
+    fitness_no_features_knn = evaluate_fitness(
+        no_feature_vector_knn,
         X_train_dummy, y_train_dummy,
-        X_val_dummy, y_val_dummy,
-        dnn_training_params=dnn_params_test
+        alpha=alpha_test, beta=beta_test,
+        verbose_level=1
     )
-    print(f"Fitness com 0 features: {fitness_no_features:.4f} (esperado: 0.99*1 + 0.01*1 = 1.0)")
+    # Esperado: alpha * 1.0 (erro max) + beta * 1.0 (ratio max, se num_selected/total for 1, mas aqui é 0)
+    # Na verdade, se num_selected == 0, o ratio é 0, mas a penalidade é alpha*1 + beta*1
+    print(f"Fitness com 0 features (KNN): {fitness_no_features_knn:.4f} (esperado: {alpha_test*1.0 + beta_test*1.0})")
 
-    print("\nTestando com todas as features selecionadas...")
-    all_features_vector = np.ones(N_TOTAL_FEATURES, dtype=int)
-    fitness_all_features = evaluate_fitness(
-        all_features_vector,
+    print("\nTestando com todas as features selecionadas (KNN)...")
+    all_features_vector_knn = np.ones(N_TOTAL_FEATURES_DUMMY, dtype=int)
+    fitness_all_features_knn = evaluate_fitness(
+        all_features_vector_knn,
         X_train_dummy, y_train_dummy,
-        X_val_dummy, y_val_dummy,
-        dnn_training_params=dnn_params_test,
-        verbose=1
+        alpha=alpha_test, beta=beta_test,
+        verbose_level=1
     )
-    print(f"Fitness com todas as features: {fitness_all_features:.4f}")
+    print(f"Fitness com todas as features (KNN): {fitness_all_features_knn:.4f}")
