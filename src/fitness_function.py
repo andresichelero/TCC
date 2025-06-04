@@ -1,6 +1,5 @@
 # src/fitness_function.py
 import numpy as np
-import gc
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.model_selection import cross_val_score, StratifiedKFold
 
@@ -9,7 +8,7 @@ def evaluate_fitness(binary_feature_vector,
                      y_train,
                      alpha, # Peso para a taxa de erro
                      beta,  # Peso para o número de características
-                     verbose_level=0 # Para logs internos da função de fitness, se necessário
+                     verbose_level=1 # Para logs internos da função de fitness, se necessário
                      ):
     """
     Avalia a aptidão de um subconjunto de características binário usando KNN e validação cruzada.
@@ -43,7 +42,7 @@ def evaluate_fitness(binary_feature_vector,
     # Configuração do KNN e Validação Cruzada
     # O artigo menciona KNN com 10-fold cross-validation.
     # k=5 é um valor comum para n_neighbors, o artigo não especifica.
-    knn = KNeighborsClassifier(n_neighbors=5)
+    knn = KNeighborsClassifier(n_neighbors=15)
     
     n_folds = 10
     # É crucial usar StratifiedKFold para problemas de classificação para manter a proporção das classes.
@@ -90,11 +89,8 @@ def evaluate_fitness(binary_feature_vector,
 
     # Calcula o fitness final
     fitness = alpha * error_rate + beta * feature_ratio
-
-    # Limpeza de memória (pode ser menos crítico com KNN do que com TensorFlow/Keras)
     del knn
     del X_train_selected
-    gc.collect()
 
     return fitness
 

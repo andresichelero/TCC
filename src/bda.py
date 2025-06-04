@@ -132,10 +132,7 @@ class BinaryDragonflyAlgorithm:
                 ratio = 1.0
             current_tau = (1.0 - ratio) * self.tau_max + ratio * self.tau_min
             current_tau = max(current_tau, 1e-5)
-
             current_w = self.w_inertia
-
-            # plot_first_agent_in_iter = (t % 2 == 0 or t == self.T -1 ) # Removido, era para plot de DNN da fitness
 
             for i in range(self.N):
                 S_i = np.zeros(self.dim)

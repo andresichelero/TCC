@@ -3,6 +3,7 @@ import gc
 import os
 import numpy as np
 import time
+import pywt
 import tensorflow as tf
 import json
 import sys
@@ -11,7 +12,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(current_dir, "src"))
 
 from src.data_loader import load_bonn_data, preprocess_eeg, split_data
-from src.feature_extractor import extract_swt_features, apply_swt
+from src.feature_extractor import extract_swt_features
 from src.dnn_model import build_dnn_model
 from src.fitness_function import evaluate_fitness
 from src.bda import BinaryDragonflyAlgorithm
@@ -63,7 +64,7 @@ VAL_SIZE = 0.15
 DNN_TRAINING_PARAMS_FINAL = {"epochs": 250, "batch_size": 32, "patience": 25}
 
 # Parâmetros dos Otimizadores
-N_AGENTS_OPTIMIZERS = 10  # Artigo: population_size = 10
+N_AGENTS_OPTIMIZERS = 20  # Artigo: population_size = 10
 T_MAX_ITER_OPTIMIZERS = 100  # Artigo: iterations = 100
 
 # Parâmetros Fitness (Conforme Artigo)
@@ -251,8 +252,8 @@ if __name__ == "__main__":
         example_signal_for_swt_plot_truncated = X_train_p[0, :slfs]
 
         # Se a função apply_swt agora retorna a lista plana de arrays:
-        swt_coeffs_arrays_example = apply_swt(
-            example_signal_for_swt_plot_truncated, wavelet=SWT_WAVELET, level=SWT_LEVEL
+        swt_coeffs_arrays_example = pywt.swt(
+            example_signal_for_swt_plot_truncated, wavelet=SWT_WAVELET, level=SWT_LEVEL, trim_approx=True, norm=True
         )
 
         example_coeffs_map_for_plot = {}
