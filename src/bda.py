@@ -70,6 +70,8 @@ class BinaryDragonflyAlgorithm:
         self.enemy_fitness = -np.inf
 
         self.convergence_curve = np.zeros(self.T)
+        self.best_accuracy_curve = np.zeros(self.T)
+        self.best_num_features_curve = np.zeros(self.T)
 
     def _initialize_population_fitness(self):
         if self.verbose_optimizer_level > 0:
@@ -79,7 +81,7 @@ class BinaryDragonflyAlgorithm:
             desc="BDA Init Fitness",
             disable=self.verbose_optimizer_level == 0,
         ):
-            self.fitness_values[i] = self.fitness_func(
+            results = self.fitness_func(
                 self.positions[i, :],
                 self.X_train_feat,
                 self.y_train,
@@ -87,12 +89,19 @@ class BinaryDragonflyAlgorithm:
                 beta=self.beta_fitness,
                 verbose_level=1,
             )
+            self.fitness_values[i] = results["fitness"]
             if self.fitness_values[i] < self.food_fitness:
                 self.food_fitness = self.fitness_values[i]
                 self.food_pos = self.positions[i, :].copy()
+                self.best_accuracy_curve[0] = results["accuracy"]
+                self.best_num_features_curve[0] = results["num_features"]
             if self.fitness_values[i] > self.enemy_fitness:
                 self.enemy_fitness = self.fitness_values[i]
                 self.enemy_pos = self.positions[i, :].copy()
+                self.best_accuracy_curve[0] = results["accuracy"]
+                self.best_num_features_curve[0] = results["num_features"]
+        if self.convergence_curve[0] == 0:
+            self.convergence_curve[0] = self.food_fitness
         if np.isinf(self.food_fitness) and self.verbose_optimizer_level > 0:
             print(
                 "ALERTA BDA: Nenhuma solução inicial válida encontrada, food_fitness é infinito!"
@@ -199,14 +208,15 @@ class BinaryDragonflyAlgorithm:
 
                 self.positions[i, :] = new_position_i
 
-                current_fitness = self.fitness_func(
+                results = self.fitness_func(
                     self.positions[i, :],
                     self.X_train_feat,
                     self.y_train,
                     alpha=self.alpha_fitness,
                     beta=self.beta_fitness,
-                    verbose_level=0,  # verbose_level para a função de fitness (KNN CV)
+                    verbose_level=1,  # verbose_level para a função de fitness (KNN CV)
                 )
+                current_fitness = results["fitness"]
                 self.fitness_values[i] = current_fitness
 
                 if current_fitness < self.food_fitness:
@@ -219,13 +229,20 @@ class BinaryDragonflyAlgorithm:
             # if plot_first_agent_in_iter: reset_fitness_call_count() # Removido
 
             self.convergence_curve[t] = self.food_fitness
-            if (
-                self.verbose_optimizer_level > 0 and (t + 1) % 10 == 0
-            ):  # Log a cada 10 iterações
+            if (self.verbose_optimizer_level > 0 and (t + 1) % 10 == 0):  # Log a cada 10 iterações
                 print(
                     f"BDA Iter {t+1}/{self.T} - Melhor Fitness (Food): {self.food_fitness:.4f}, "
                     f"Pior Fitness (Enemy): {self.enemy_fitness:.4f}, Tau: {current_tau:.2f}"
                 )
+            best_results_this_iter = self.fitness_func(
+                self.food_pos,
+                self.X_train_feat,
+                self.y_train,
+                self.alpha_fitness,
+                self.beta_fitness,
+            )
+            self.best_accuracy_curve[t] = best_results_this_iter["accuracy"]
+            self.best_num_features_curve[t] = best_results_this_iter["num_features"]
 
         if self.verbose_optimizer_level > 0:
             print(
@@ -235,7 +252,13 @@ class BinaryDragonflyAlgorithm:
             print(
                 f"Número de features selecionadas pelo BDA: {num_selected_bda} de {self.dim}"
             )
-        return self.food_pos, self.food_fitness, self.convergence_curve
+        return (
+            self.food_pos,
+            self.food_fitness,
+            self.convergence_curve,
+            self.best_accuracy_curve,
+            self.best_num_features_curve,
+        )
 
 
 if __name__ == "__main__":

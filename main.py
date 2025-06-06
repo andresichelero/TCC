@@ -7,10 +7,6 @@ import pywt
 import tensorflow as tf
 import json
 import sys
-
-current_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(current_dir, "src"))
-
 from src.data_loader import load_bonn_data, preprocess_eeg, split_data
 from src.feature_extractor import extract_swt_features
 from src.dnn_model import build_dnn_model
@@ -22,11 +18,16 @@ from src.utils import (
     plot_convergence_curves,
     plot_data_distribution_pca,
     plot_eeg_segments,
+    plot_optimization_diagnostics,
     plot_swt_coefficients,
     plot_dnn_training_history,
     plot_final_metrics_comparison_bars,
+    visualize_knn_decision_boundary,
 )
 import src.utils as utils_module
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(current_dir, "src"))
 
 # --- Configurações Globais ---
 BASE_DATA_DIR = os.path.join(current_dir, "data")
@@ -370,7 +371,33 @@ if __name__ == "__main__":
         seed=RANDOM_SEED,
         verbose_optimizer_level=VERBOSE_OPTIMIZER_LEVEL,
     )
-    Sf_bda, best_fitness_bda, convergence_bda = bda.run()
+    Sf_bda, best_fitness_bda, convergence_bda, acc_curve_bda, nfeat_curve_bda = (
+        bda.run()
+    )
+    bda_diagnostic_curves = {
+        "Melhor Fitness": convergence_bda,
+        "Acurácia do Melhor Agente (%)": np.array(acc_curve_bda) * 100,
+        "Nº de Features do Melhor Agente": nfeat_curve_bda,
+    }
+    plot_optimization_diagnostics(
+        bda_diagnostic_curves,
+        title="Diagnóstico da Otimização - BDA",
+        filename="bda_diagnostics.png",
+    )
+
+    if Sf_bda is not None and np.sum(Sf_bda) > 1:
+        print(
+            "\nGerando visualização da fronteira de decisão do KNN para a solução final do BDA..."
+        )
+        visualize_knn_decision_boundary(
+            X_train_feat_opt,  # Dados de treino usados na otimização
+            y_train_labels,  # Rótulos de treino
+            Sf_bda,  # Vetor de features da melhor solução
+            class_names=class_names,
+            title="Fronteira de Decisão KNN (Solução Final BDA)",
+            filename="bda_final_solution_knn_boundary.png",
+        )
+
     all_results["bda_optimization"] = {
         "best_fitness": best_fitness_bda,
         "selected_features_vector": (
@@ -412,7 +439,32 @@ if __name__ == "__main__":
         seed=RANDOM_SEED,
         verbose_optimizer_level=VERBOSE_OPTIMIZER_LEVEL,
     )
-    Sf_bpso, best_fitness_bpso, convergence_bpso = bpso.run()
+    Sf_bpso, best_fitness_bpso, convergence_bpso, acc_curve_bpso, nfeat_curve_bpso = bpso.run()
+
+    bpso_diagnostic_curves = {
+        "Melhor Fitness": convergence_bpso,
+        "Acurácia do Melhor Agente (%)": np.array(acc_curve_bpso) * 100,
+        "Nº de Features do Melhor Agente": nfeat_curve_bpso,
+    }
+    plot_optimization_diagnostics(
+        bpso_diagnostic_curves,
+        title="Diagnóstico da Otimização - BPSO",
+        filename="bpso_diagnostics.png",
+    )
+
+    if Sf_bpso is not None and np.sum(Sf_bda) > 1:
+        print(
+            "\nGerando visualização da fronteira de decisão do KNN para a solução final do BPSO..."
+        )
+        visualize_knn_decision_boundary(
+            X_train_feat_opt,  # Dados de treino usados na otimização
+            y_train_labels,  # Rótulos de treino
+            Sf_bpso,  # Vetor de features da melhor solução
+            class_names=class_names,
+            title="Fronteira de Decisão KNN (Solução Final BPSO)",
+            filename="bpso_final_solution_knn_boundary.png",
+        )
+
     all_results["bpso_optimization"] = {
         "best_fitness": best_fitness_bpso,
         "selected_features_vector": (
@@ -587,7 +639,6 @@ if __name__ == "__main__":
         if final_eval_results_for_plot:
             plot_final_metrics_comparison_bars(
                 final_eval_results_for_plot,
-                class_names=class_names,
                 base_filename="final_model_metrics_knn_fitness",
             )
         else:

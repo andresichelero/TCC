@@ -3,6 +3,8 @@ import numpy as np
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.model_selection import cross_val_score, StratifiedKFold
 
+EVALUATION_COUNTER = 0
+
 def evaluate_fitness(binary_feature_vector,
                      X_train_all_features,
                      y_train,
@@ -26,34 +28,25 @@ def evaluate_fitness(binary_feature_vector,
     selected_indices = np.where(binary_feature_vector == 1)[0]
     num_selected = len(selected_indices)
     total_num_features_available = len(binary_feature_vector)
-
+    global EVALUATION_COUNTER
+    EVALUATION_COUNTER += 1
     # Penalidade se nenhuma característica for selecionada
     if num_selected == 0:
         # Retorna o pior fitness possível: erro máximo (1.0) e razão de features máxima (1.0)
         return alpha * 1.0 + beta * 1.0
 
     X_train_selected = X_train_all_features[:, selected_indices]
-
-    # Verifica se, após a seleção, ainda temos alguma feature.
-    # Isso é um pouco redundante com num_selected == 0, mas é uma boa verificação.
     if X_train_selected.shape[1] == 0:
         return alpha * 1.0 + beta * 1.0
 
     # Configuração do KNN e Validação Cruzada
     # O artigo menciona KNN com 10-fold cross-validation.
     # k=5 é um valor comum para n_neighbors, o artigo não especifica.
-    knn = KNeighborsClassifier(n_neighbors=15)
-    
+    knn = KNeighborsClassifier(n_neighbors=20) #
     n_folds = 10
-    # É crucial usar StratifiedKFold para problemas de classificação para manter a proporção das classes.
-    # O dataset Bonn tem 100 amostras por classe (A, D, E).
-    # Após o split inicial (e.g., 80/20), o X_train terá ~80 amostras de cada classe (se for balanceado).
-    # O y_train para os otimizadores é derivado do X_train_p, que é 80% - VAL_SIZE do total.
-    # Ex: Total 300 -> X_train_p (antes da extração de features) é ~ (300 * (1 - 0.20 - 0.15)) = 300 * 0.65 = 195.
-    # Se balanceado, ~65 amostras por classe. Isso é suficiente para 10 folds.
-    
+
     min_samples_per_class_in_ytrain = np.min(np.bincount(y_train))
-    
+
     if min_samples_per_class_in_ytrain < n_folds:
         if verbose_level > 0:
             print(f"Fitness Warning: Smallest class in y_train has {min_samples_per_class_in_ytrain} samples, "
@@ -65,7 +58,6 @@ def evaluate_fitness(binary_feature_vector,
                 print("Fitness Error: Smallest class has < 2 samples. Cannot perform CV. Returning max fitness.")
             return alpha * 1.0 + beta * 1.0
         n_folds = min_samples_per_class_in_ytrain
-
 
     # Usar random_state para reprodutibilidade da divisão da validação cruzada
     cv_splitter = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=42)
@@ -83,16 +75,30 @@ def evaluate_fitness(binary_feature_vector,
         return alpha * 1.0 + beta * 1.0 # Pior fitness
 
     error_rate = 1.0 - accuracy
-
-    # Calcula a razão de características selecionadas
     feature_ratio = num_selected / total_num_features_available
-
-    # Calcula o fitness final
     fitness = alpha * error_rate + beta * feature_ratio
+
+    if verbose_level > 3:
+        print(
+            f"[Avaliação {EVALUATION_COUNTER}] Features Selecionadas: {num_selected}/{total_num_features_available}"
+        )
+        print(f"    Acurácia Média (10-fold CV): {accuracy:.4f}")
+        # Acurácia de cada uma das 10 dobras - EXTREMAMENTE VERBOSE
+        print(f"    Scores por Dobra: {[f'{acc:.3f}' for acc in accuracies]}")
+        print(
+            f"    Taxa de Erro: {error_rate:.4f} | Razão de Features: {feature_ratio:.4f}"
+        )
+        print(f"    => Fitness Calculado: {fitness:.6f}")
+        print("-" * 20)
+
     del knn
     del X_train_selected
 
-    return fitness
+    return {
+        'fitness': fitness,
+        'accuracy': accuracy,
+        'num_features': num_selected
+    }
 
 if __name__ == '__main__':
     # Exemplo de uso com dados dummy

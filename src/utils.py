@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import os
 from scipy.signal import welch # Para o espectro de frequência
 from sklearn.decomposition import PCA
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import StandardScaler
 import pandas as pd
 import seaborn as sns 
@@ -23,6 +24,83 @@ class NumpyEncoder(json.JSONEncoder):
         elif isinstance(obj, np.ndarray):
             return obj.tolist()
         return super(NumpyEncoder, self).default(obj)
+
+
+def visualize_knn_decision_boundary(
+    X_train_all_features,
+    y_train,
+    selected_features_vector,
+    class_names=None,
+    title="Fronteira de Decisão KNN",
+    filename="knn_decision_boundary.png",
+):
+
+    selected_indices = np.where(selected_features_vector == 1)[0]
+    if len(selected_indices) < 2:
+        print("Visualização da fronteira de decisão requer pelo menos 2 features.")
+        return
+
+    # 1. Seleciona e Padroniza as features
+    X_selected = X_train_all_features[:, selected_indices]
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X_selected)
+
+    # 2. Reduz para 2D com PCA
+    pca = PCA(n_components=2)
+    X_2d = pca.fit_transform(X_scaled)
+
+    # 3. Treina um novo KNN nos dados 2D
+    knn = KNeighborsClassifier(n_neighbors=15)
+    knn.fit(X_2d, y_train)
+
+    # 4. Cria um meshgrid para plotar a fronteira
+    x_min, x_max = X_2d[:, 0].min() - 1, X_2d[:, 0].max() + 1
+    y_min, y_max = X_2d[:, 1].min() - 1, X_2d[:, 1].max() + 1
+    xx, yy = np.meshgrid(np.arange(x_min, x_max, 0.1), np.arange(y_min, y_max, 0.1))
+
+    Z = knn.predict(np.c_[xx.ravel(), yy.ravel()])
+    Z = Z.reshape(xx.shape)
+
+    # 5. Plota
+    fig = plt.figure(figsize=(10, 8))
+    plt.contourf(xx, yy, Z, alpha=0.4, cmap=plt.cm.RdYlBu)
+
+    scatter = plt.scatter(
+        X_2d[:, 0], X_2d[:, 1], c=y_train, s=20, edgecolor="k", cmap=plt.cm.RdYlBu
+    )
+
+    plt.xlabel(f"Componente Principal 1 ({pca.explained_variance_ratio_[0]*100:.2f}%)")
+    plt.ylabel(f"Componente Principal 2 ({pca.explained_variance_ratio_[1]*100:.2f}%)")
+    plt.title(title)
+
+    if class_names:
+        legend1 = plt.legend(
+            handles=scatter.legend_elements()[0], labels=class_names, title="Classes"
+        )
+        plt.gca().add_artist(legend1)
+
+    _handle_plot(fig, filename, title)
+
+
+def plot_optimization_diagnostics(
+    curves_dict, title="Diagnóstico da Otimização", filename="opt_diagnostics.png"
+):
+    num_plots = len(curves_dict)
+    fig, axs = plt.subplots(num_plots, 1, figsize=(10, 5 * num_plots), sharex=True)
+    if num_plots == 1:
+        axs = [axs]
+
+    iterations = range(len(next(iter(curves_dict.values()))))
+
+    for ax, (metric_name, curve_data) in zip(axs, curves_dict.items()):
+        ax.plot(iterations, curve_data, marker=".")
+        ax.set_title(f"Evolução de '{metric_name}' do Melhor Agente")
+        ax.set_ylabel(metric_name)
+        ax.grid(True)
+
+    axs[-1].set_xlabel("Iteração")
+    plt.tight_layout()
+    _handle_plot(fig, filename, title)
 
 
 def calculate_specificity(y_true, y_pred, class_label, num_classes):

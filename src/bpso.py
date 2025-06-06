@@ -52,22 +52,23 @@ class BinaryPSO:
         self.pbest_pos = self.positions.copy()
         self.pbest_fitness = np.full(self.N, np.inf)
 
-        self.gbest_pos = np.zeros(
-            self.dim, dtype=int
-        )
+        self.gbest_pos = np.zeros(self.dim, dtype=int)
         self.gbest_fitness = np.inf
 
         self.convergence_curve = np.zeros(self.T)
+        self.best_accuracy_curve = np.zeros(self.T)
+        self.best_num_features_curve = np.zeros(self.T)
 
     def _initialize_population(self):
         if self.verbose_optimizer_level > 0:
             print("BPSO: Inicializando população e calculando fitness inicial...")
+
         for i in tqdm(
             range(self.N),
             desc="BPSO Init Fitness",
             disable=self.verbose_optimizer_level == 0,
         ):
-            fitness_val = self.fitness_func(
+            results = self.fitness_func(
                 self.positions[i, :],
                 self.X_train_feat,
                 self.y_train,
@@ -75,11 +76,15 @@ class BinaryPSO:
                 beta=self.beta_fitness,
                 verbose_level=1,
             )
+
+            fitness_val = results["fitness"]
             self.pbest_fitness[i] = fitness_val
+            self.pbest_pos[i, :] = self.positions[i, :].copy()
 
             if fitness_val < self.gbest_fitness:
                 self.gbest_fitness = fitness_val
                 self.gbest_pos = self.positions[i, :].copy()
+
         if self.verbose_optimizer_level > 0:
             print(f"BPSO: Melhor fitness inicial (gBest): {self.gbest_fitness:.4f}")
 
@@ -93,13 +98,26 @@ class BinaryPSO:
                 print(
                     "BPSO: Otimização não pode prosseguir pois o fitness inicial é infinito."
                 )
-            if np.sum(self.gbest_pos) == 0:  # Se gbest_pos não foi atualizado
+            if np.sum(self.gbest_pos) == 0:
                 self.gbest_pos = self.positions[0, :].copy()
-            return self.gbest_pos, self.gbest_fitness, self.convergence_curve
+
+            return (
+                self.gbest_pos,
+                self.gbest_fitness,
+                self.convergence_curve,
+                self.best_accuracy_curve,
+                self.best_num_features_curve,
+            )
         elif self.N == 0:
             if self.verbose_optimizer_level > 0:
                 print("BPSO: Tamanho da população é 0. Não é possível executar.")
-            return np.array([]), np.inf, self.convergence_curve
+            return (
+                np.array([]),
+                np.inf,
+                self.convergence_curve,
+                self.best_accuracy_curve,
+                self.best_num_features_curve,
+            )
 
         if self.verbose_optimizer_level > 0:
             print(f"\nIniciando otimização BPSO por {self.T} iterações...")
@@ -134,7 +152,7 @@ class BinaryPSO:
                 new_position_i = (np.random.rand(self.dim) < prob_to_be_1).astype(int)
                 self.positions[i, :] = new_position_i
 
-                current_fitness = self.fitness_func(
+                results = self.fitness_func(
                     self.positions[i, :],
                     self.X_train_feat,
                     self.y_train,
@@ -142,6 +160,8 @@ class BinaryPSO:
                     beta=self.beta_fitness,
                     verbose_level=1,
                 )
+                current_fitness = results["fitness"]
+
                 if current_fitness < self.pbest_fitness[i]:
                     self.pbest_fitness[i] = current_fitness
                     self.pbest_pos[i, :] = self.positions[i, :].copy()
@@ -150,6 +170,17 @@ class BinaryPSO:
                         self.gbest_fitness = current_fitness
                         self.gbest_pos = self.positions[i, :].copy()
             self.convergence_curve[t] = self.gbest_fitness
+            best_results_this_iter = self.fitness_func(
+                self.gbest_pos,
+                self.X_train_feat,
+                self.y_train,
+                self.alpha_fitness,
+                self.beta_fitness,
+                verbose_level=1,
+            )
+            self.best_accuracy_curve[t] = best_results_this_iter["accuracy"]
+            self.best_num_features_curve[t] = best_results_this_iter["num_features"]
+
             if self.verbose_optimizer_level > 0 and (t + 1) % 10 == 0:
                 print(
                     f"BPSO Iter {t+1}/{self.T} - Melhor Fitness (gBest): {self.gbest_fitness:.4f}, w: {current_w:.2f}"
@@ -163,7 +194,13 @@ class BinaryPSO:
             print(
                 f"Número de features selecionadas pelo BPSO: {num_selected_bpso} de {self.dim}"
             )
-        return self.gbest_pos, self.gbest_fitness, self.convergence_curve
+        return (
+            self.gbest_pos,
+            self.gbest_fitness,
+            self.convergence_curve,
+            self.best_accuracy_curve,
+            self.best_num_features_curve,
+        )
 
 
 if __name__ == "__main__":
