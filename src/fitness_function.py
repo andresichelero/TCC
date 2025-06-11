@@ -23,68 +23,79 @@ def evaluate_fitness(binary_feature_vector,
         beta (float): Peso para a razão de características na fórmula de fitness.
         verbose_level (int): Nível de verbosidade para logs internos.
     Returns:
-        float: Valor de fitness (menor é melhor).
+        dict: Dicionário com 'fitness', 'accuracy', 'num_features'.
     """
     selected_indices = np.where(binary_feature_vector == 1)[0]
     num_selected = len(selected_indices)
     total_num_features_available = len(binary_feature_vector)
     global EVALUATION_COUNTER
     EVALUATION_COUNTER += 1
+    
     # Penalidade se nenhuma característica for selecionada
     if num_selected == 0:
         # Retorna o pior fitness possível: erro máximo (1.0) e razão de features máxima (1.0)
-        return alpha * 1.0 + beta * 1.0
+        return {
+            'fitness': alpha * 1.0 + beta * 1.0,
+            'accuracy': 0.0,
+            'num_features': 0
+        }
 
     X_train_selected = X_train_all_features[:, selected_indices]
+
     if X_train_selected.shape[1] == 0:
-        return alpha * 1.0 + beta * 1.0
+        return {
+            'fitness': alpha * 1.0 + beta * 1.0,
+            'accuracy': 0.0,
+            'num_features': 0
+        }
 
     # Configuração do KNN e Validação Cruzada
     # O artigo menciona KNN com 10-fold cross-validation.
     # k=5 é um valor comum para n_neighbors, o artigo não especifica.
-    knn = KNeighborsClassifier(n_neighbors=20) #
+    knn = KNeighborsClassifier(n_neighbors=5, metric='manhattan', weights='distance')
     n_folds = 10
 
     min_samples_per_class_in_ytrain = np.min(np.bincount(y_train))
 
     if min_samples_per_class_in_ytrain < n_folds:
         if verbose_level > 0:
-            print(f"Fitness Warning: Smallest class in y_train has {min_samples_per_class_in_ytrain} samples, "
+            print(f"Fitness Warning: Smallest class has {min_samples_per_class_in_ytrain} samples, "
                   f"which is less than n_folds={n_folds}. Adjusting n_folds to {min_samples_per_class_in_ytrain}.")
-        # Ajusta n_folds se for maior que o número de amostras na menor classe
-        # A CV ainda requer pelo menos 2 amostras por classe para n_folds >= 2.
-        if min_samples_per_class_in_ytrain < 2 : # Não é possível fazer CV
+        if min_samples_per_class_in_ytrain < 2 :
             if verbose_level > 0:
                 print("Fitness Error: Smallest class has < 2 samples. Cannot perform CV. Returning max fitness.")
-            return alpha * 1.0 + beta * 1.0
+            return {
+                'fitness': alpha * 1.0 + beta * 1.0,
+                'accuracy': 0.0,
+                'num_features': num_selected
+            }
         n_folds = min_samples_per_class_in_ytrain
 
-    # Usar random_state para reprodutibilidade da divisão da validação cruzada
     cv_splitter = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=42)
 
     try:
-        # cross_val_score retorna um array de scores para cada fold.
-        # O scoring padrão para classificadores é 'accuracy'.
         accuracies = cross_val_score(knn, X_train_selected, y_train, cv=cv_splitter, scoring='accuracy')
         accuracy = np.mean(accuracies)
     except ValueError as e:
-        # Isso pode acontecer se, por exemplo, uma dobra da CV acabar com apenas uma classe.
         if verbose_level > 0:
             print(f"Fitness Error: ValueError during cross_val_score for KNN: {e}. "
                   f"Num selected features: {num_selected}. Returning max fitness.")
-        return alpha * 1.0 + beta * 1.0 # Pior fitness
+        return {
+            'fitness': alpha * 1.0 + beta * 1.0,
+            'accuracy': 0.0,
+            'num_features': num_selected
+        }
 
     error_rate = 1.0 - accuracy
     feature_ratio = num_selected / total_num_features_available
     fitness = alpha * error_rate + beta * feature_ratio
 
-    if verbose_level > 3:
+    if verbose_level > 0:
         print(
             f"[Avaliação {EVALUATION_COUNTER}] Features Selecionadas: {num_selected}/{total_num_features_available}"
         )
         print(f"    Acurácia Média (10-fold CV): {accuracy:.4f}")
-        # Acurácia de cada uma das 10 dobras - EXTREMAMENTE VERBOSE
-        print(f"    Scores por Dobra: {[f'{acc:.3f}' for acc in accuracies]}")
+        #print(f"    Scores por Dobra: {[f'{acc:.3f}' for acc in accuracies]}")
         print(
             f"    Taxa de Erro: {error_rate:.4f} | Razão de Features: {feature_ratio:.4f}"
         )
@@ -93,12 +104,14 @@ def evaluate_fitness(binary_feature_vector,
 
     del knn
     del X_train_selected
-
-    return {
+    
+    results = {
         'fitness': fitness,
         'accuracy': accuracy,
         'num_features': num_selected
     }
+    
+    return results
 
 if __name__ == '__main__':
     # Exemplo de uso com dados dummy

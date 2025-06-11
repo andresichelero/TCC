@@ -62,15 +62,15 @@ TEST_SIZE = 0.20
 VAL_SIZE = 0.15 
 
 # Parâmetros da DNN para Treino Final
-DNN_TRAINING_PARAMS_FINAL = {"epochs": 250, "batch_size": 32, "patience": 25}
+DNN_TRAINING_PARAMS_FINAL = {"epochs": 250, "batch_size": 32, "patience": 30}
 
 # Parâmetros dos Otimizadores
-N_AGENTS_OPTIMIZERS = 20  # Artigo: population_size = 10
+N_AGENTS_OPTIMIZERS = 10  # Artigo: population_size = 10
 T_MAX_ITER_OPTIMIZERS = 100  # Artigo: iterations = 100
 
 # Parâmetros Fitness (Conforme Artigo)
-ALPHA_FITNESS = 0.99
-BETA_FITNESS = 0.01
+ALPHA_FITNESS = 0.90
+BETA_FITNESS = 0.10
 
 # Nível de verbosidade para os otimizadores
 VERBOSE_OPTIMIZER_LEVEL = 1
@@ -420,79 +420,79 @@ if __name__ == "__main__":
     gc.collect()
 
     # --- 6. Otimização com BPSO ---
-    print("\n\n--- 6. Otimização com Binary Particle Swarm Optimization (BPSO) ---")
-    start_time_bpso_opt = time.time()
-    bpso = BinaryPSO(
-        N=N_AGENTS_OPTIMIZERS,
-        T=T_MAX_ITER_OPTIMIZERS,
-        dim=DIM_FEATURES,
-        fitness_func=evaluate_fitness,
-        X_train_feat=X_train_feat_opt,
-        y_train=y_train_labels,
-        w_max=0.9,
-        w_min=0.4,
-        c1=2.0,
-        c2=2.0,
-        Vmax=4.0,  # Parâmetros BPSO comuns
-        alpha_fitness=ALPHA_FITNESS,
-        beta_fitness=BETA_FITNESS,
-        seed=RANDOM_SEED,
-        verbose_optimizer_level=VERBOSE_OPTIMIZER_LEVEL,
-    )
-    Sf_bpso, best_fitness_bpso, convergence_bpso, acc_curve_bpso, nfeat_curve_bpso = bpso.run()
+    #print("\n\n--- 6. Otimização com Binary Particle Swarm Optimization (BPSO) ---")
+    #start_time_bpso_opt = time.time()
+    #bpso = BinaryPSO(
+#        N=N_AGENTS_OPTIMIZERS,
+#        T=T_MAX_ITER_OPTIMIZERS,
+#        dim=DIM_FEATURES,
+#        fitness_func=evaluate_fitness,
+#        X_train_feat=X_train_feat_opt,
+#        y_train=y_train_labels,
+#        w_max=0.9,
+#        w_min=0.4,
+#        c1=2.0,
+#        c2=2.0,
+#        Vmax=4.0,  # Parâmetros BPSO comuns
+#        alpha_fitness=ALPHA_FITNESS,
+#        beta_fitness=BETA_FITNESS,
+#        seed=RANDOM_SEED,
+#        verbose_optimizer_level=VERBOSE_OPTIMIZER_LEVEL,
+#    )
+    #Sf_bpso, best_fitness_bpso, convergence_bpso, acc_curve_bpso, nfeat_curve_bpso = bpso.run()
+#
+    #bpso_diagnostic_curves = {
+#        "Melhor Fitness": convergence_bpso,
+#        "Acurácia do Melhor Agente (%)": np.array(acc_curve_bpso) * 100,
+#        "Nº de Features do Melhor Agente": nfeat_curve_bpso,
+#    }
+#    #plot_optimization_diagnostics(
+#        bpso_diagnostic_curves,
+#        title="Diagnóstico da Otimização - BPSO",
+#        filename="bpso_diagnostics.png",
+#    )
+#
+    #if Sf_bpso is not None and np.sum(Sf_bda) > 1:
+#        print(
+#            "\nGerando visualização da fronteira de decisão do KNN para a solução final do BPSO..."
+#        )
+#        visualize_knn_decision_boundary(
+#            X_train_feat_opt,  # Dados de treino usados na otimização
+#            y_train_labels,  # Rótulos de treino
+#            Sf_bpso,  # Vetor de features da melhor solução
+#            class_names=class_names,
+#            title="Fronteira de Decisão KNN (Solução Final BPSO)",
+#            filename="bpso_final_solution_knn_boundary.png",
+#        )
+#
+    #all_results["bpso_optimization"] = {
+#       "best_fitness": best_fitness_bpso,
+#       "selected_features_vector": (
+#           Sf_bpso.tolist() if isinstance(Sf_bpso, np.ndarray) else Sf_bpso
+#       ),
+#       "num_selected_features": (
+#           int(np.sum(Sf_bpso)) if isinstance(Sf_bpso, np.ndarray) else 0
+#       ),
+#       "convergence_curve": (
+#           convergence_bpso.tolist()
+#           if isinstance(convergence_bpso, np.ndarray)
+#           else convergence_bpso
+#       ),
+#   }
+    #all_convergence_curves.append(convergence_bpso)
+    #convergence_labels.append("BPSO")
+    #print(
+    #    f"Tempo de otimização BPSO: {(time.time() - start_time_bpso_opt)/60:.2f} minutos"
+    #)
+    #gc.collect()
 
-    bpso_diagnostic_curves = {
-        "Melhor Fitness": convergence_bpso,
-        "Acurácia do Melhor Agente (%)": np.array(acc_curve_bpso) * 100,
-        "Nº de Features do Melhor Agente": nfeat_curve_bpso,
-    }
-    plot_optimization_diagnostics(
-        bpso_diagnostic_curves,
-        title="Diagnóstico da Otimização - BPSO",
-        filename="bpso_diagnostics.png",
-    )
-
-    if Sf_bpso is not None and np.sum(Sf_bda) > 1:
-        print(
-            "\nGerando visualização da fronteira de decisão do KNN para a solução final do BPSO..."
-        )
-        visualize_knn_decision_boundary(
-            X_train_feat_opt,  # Dados de treino usados na otimização
-            y_train_labels,  # Rótulos de treino
-            Sf_bpso,  # Vetor de features da melhor solução
-            class_names=class_names,
-            title="Fronteira de Decisão KNN (Solução Final BPSO)",
-            filename="bpso_final_solution_knn_boundary.png",
-        )
-
-    all_results["bpso_optimization"] = {
-        "best_fitness": best_fitness_bpso,
-        "selected_features_vector": (
-            Sf_bpso.tolist() if isinstance(Sf_bpso, np.ndarray) else Sf_bpso
-        ),
-        "num_selected_features": (
-            int(np.sum(Sf_bpso)) if isinstance(Sf_bpso, np.ndarray) else 0
-        ),
-        "convergence_curve": (
-            convergence_bpso.tolist()
-            if isinstance(convergence_bpso, np.ndarray)
-            else convergence_bpso
-        ),
-    }
-    all_convergence_curves.append(convergence_bpso)
-    convergence_labels.append("BPSO")
-    print(
-        f"Tempo de otimização BPSO: {(time.time() - start_time_bpso_opt)/60:.2f} minutos"
-    )
-    gc.collect()
-
-    if all_convergence_curves:
-        plot_convergence_curves(
-            all_convergence_curves,
-            convergence_labels,
-            title="Convergência dos Otimizadores (Fitness KNN na Validação Cruzada)",
-            filename="optimizers_convergence_knn_fitness.png",
-        )
+    #if all_convergence_curves:
+    #    plot_convergence_curves(
+    #        all_convergence_curves,
+    #        convergence_labels,
+    #        title="Convergência dos Otimizadores (Fitness KNN na Validação Cruzada)",
+    #        filename="optimizers_convergence_knn_fitness.png",
+    #    )
 
     # --- 7. Treinamento e Avaliação Final da DNN ---
     print("\n\n--- 7. Treinamento e Avaliação Final dos Modelos DNN ---")
@@ -520,18 +520,18 @@ if __name__ == "__main__":
         all_results["bda_dnn_final_eval"] = metrics_bda_dnn
 
     # BPSO+DNN
-    metrics_bpso_dnn, history_bpso_dnn = train_and_evaluate_final_model(
-        "BPSO+DNN",
-        Sf_bpso,
-        X_train_full_feat_final,
-        y_train_full_labels_final,
-        X_test_feat_final,
-        y_test_labels,
-        DNN_TRAINING_PARAMS_FINAL,
-        class_names,
-    )
-    if metrics_bpso_dnn:
-        all_results["bpso_dnn_final_eval"] = metrics_bpso_dnn
+    #metrics_bpso_dnn, history_bpso_dnn = train_and_evaluate_final_model(
+    #    "BPSO+DNN",
+    #    Sf_bpso,
+    #    X_train_full_feat_final,
+    #    y_train_full_labels_final,
+    #    X_test_feat_final,
+    #    y_test_labels,
+    #    DNN_TRAINING_PARAMS_FINAL,
+    #    class_names,
+    #)
+    #if metrics_bpso_dnn:
+    #    all_results["bpso_dnn_final_eval"] = metrics_bpso_dnn
 
     # --- 8. Salvar Resultados Consolidados ---
     results_file_path = os.path.join(
