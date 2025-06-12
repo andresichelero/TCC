@@ -1,12 +1,8 @@
 # main.py
-import gc
-import os
-import numpy as np
-import time
+import gc, os, time, datetime, json, sys
 import pywt
+import numpy as np
 import tensorflow as tf
-import json
-import sys
 from src.data_loader import load_bonn_data, preprocess_eeg, split_data
 from src.feature_extractor import extract_swt_features
 from src.dnn_model import build_dnn_model
@@ -18,6 +14,7 @@ from src.utils import (
     plot_convergence_curves,
     plot_data_distribution_pca,
     plot_eeg_segments,
+    plot_feature_count_distribution,
     plot_optimization_diagnostics,
     plot_swt_coefficients,
     plot_dnn_training_history,
@@ -32,9 +29,18 @@ sys.path.insert(0, os.path.join(current_dir, "src"))
 # --- Configurações Globais ---
 BASE_DATA_DIR = os.path.join(current_dir, "data")
 RESULTS_DIR = os.path.join(current_dir, "results")
-PLOTS_DIR_MAIN = os.path.join(RESULTS_DIR, "plots")
-os.makedirs(PLOTS_DIR_MAIN, exist_ok=True)
+#PLOTS_DIR_MAIN = os.path.join(RESULTS_DIR, "plots")
+#os.makedirs(PLOTS_DIR_MAIN, exist_ok=True)
 os.makedirs(RESULTS_DIR, exist_ok=True)
+
+# Diretórios de Resultados Dinâmicos
+# Cria uma pasta única para cada execução para não sobrescrever resultados.
+run_timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+BASE_RESULTS_DIR = os.path.join(current_dir, "results")
+RUN_RESULTS_DIR = os.path.join(BASE_RESULTS_DIR, f"run_{run_timestamp}")
+PLOTS_DIR_MAIN = os.path.join(RUN_RESULTS_DIR, "plots")
+os.makedirs(PLOTS_DIR_MAIN, exist_ok=True)
+print(f"Salvando resultados nesta execução em: {RUN_RESULTS_DIR}")
 
 RANDOM_SEED = 42
 np.random.seed(RANDOM_SEED)
@@ -50,6 +56,12 @@ except Exception as e:
 utils_module.SAVE_PLOTS = SAVE_PLOTS_DEFAULT
 utils_module.PLOTS_DIR = PLOTS_DIR_MAIN
 
+# --- CONFIGURAÇÕES PARA TREINAMENTO AVANÇADO ---
+ENABLE_FEATURE_COUNT_FILTER = True      # Mude para True para filtrar pelo número de features
+TARGET_FEATURE_COUNT = 18               # O número exato de features a serem treinadas
+FINAL_MODEL_ACCURACY_THRESHOLD = 0.96   # Acurácia mínima de 85% para um modelo ser considerado "bom"
+MAX_FINAL_MODELS_TO_KEEP = 15            # Tentar encontrar até 5 modelos que passem no limiar
+
 # Parâmetros do Dataset e Pré-processamento
 FS = 173.61
 HIGHCUT_HZ = 40.0  # Filtro passa-baixas [0-40Hz]
@@ -62,15 +74,15 @@ TEST_SIZE = 0.20
 VAL_SIZE = 0.15 
 
 # Parâmetros da DNN para Treino Final
-DNN_TRAINING_PARAMS_FINAL = {"epochs": 250, "batch_size": 32, "patience": 30}
+DNN_TRAINING_PARAMS_FINAL = {"epochs": 250, "batch_size": 16, "patience": 30}
 
 # Parâmetros dos Otimizadores
 N_AGENTS_OPTIMIZERS = 10  # Artigo: population_size = 10
 T_MAX_ITER_OPTIMIZERS = 100  # Artigo: iterations = 100
 
 # Parâmetros Fitness (Conforme Artigo)
-ALPHA_FITNESS = 0.90
-BETA_FITNESS = 0.10
+ALPHA_FITNESS = 0.99
+BETA_FITNESS = 0.01
 
 # Nível de verbosidade para os otimizadores
 VERBOSE_OPTIMIZER_LEVEL = 1
@@ -86,6 +98,7 @@ def train_and_evaluate_final_model(
     y_test,
     dnn_params,
     class_names,
+    opt_fitness_score
 ):
     print(f"\n--- Treinamento e Avaliação Final: {model_name} ---")
     selected_indices = np.where(selected_features_vector == 1)[0]
@@ -141,20 +154,57 @@ def train_and_evaluate_final_model(
     metrics = calculate_all_metrics(y_test, y_pred_test, class_names=class_names)
     metrics["num_selected_features"] = num_selected
     metrics["selected_feature_indices"] = selected_indices.tolist()
+    metrics["fitness_score_from_optimizer"] = opt_fitness_score
 
     model_save_path = os.path.join(
-        RESULTS_DIR, f"{model_name.replace('+', '_')}_final_model.keras"
+        RUN_RESULTS_DIR, f"{model_name.replace('+', '_').replace('-', '_')}_final_model.keras"
     )
     try:
         final_model.save(model_save_path)
-        if VERBOSE_OPTIMIZER_LEVEL > 0:
-            print(f"Modelo final {model_name} salvo em: {model_save_path}")
     except Exception as e:
         print(f"Erro ao salvar o modelo {model_name}: {e}")
 
     del final_model
     gc.collect()
     return metrics, history_data
+
+# --- Função para processar histórico e pegar top N soluções ---
+def get_top_n_unique_solutions(history, n=20):
+    """
+    Processa o histórico de soluções de um otimizador para retornar as N melhores
+    soluções únicas encontradas.
+    Args:
+        history (list): Lista de tuplas (fitness, solution_vector).
+        n (int): Número de melhores soluções a retornar.
+    Returns:
+        list: Lista de tuplas (fitness, solution_vector) para as N melhores soluções.
+    """
+    if not history:
+        return []
+
+    unique_solutions = {}
+    for fitness, sol in history:
+        sol_tuple = tuple(sol)
+        # Se a solução é nova ou se encontramos um fitness melhor para ela
+        if sol_tuple not in unique_solutions or fitness < unique_solutions[sol_tuple]:
+            unique_solutions[sol_tuple] = fitness
+
+    # Ordena as soluções únicas pelo seu fitness (do menor para o maior)
+    sorted_solutions = sorted(unique_solutions.items(), key=lambda item: item[1])
+
+    # Retorna o vetor da solução e seu fitness
+    top_n = [(fit, np.array(sol)) for sol, fit in sorted_solutions[:n]]
+    return top_n
+
+def get_all_unique_solutions_sorted(history):
+    if not history: return []
+    unique_solutions = {}
+    for fitness, sol in history:
+        sol_tuple = tuple(sol)
+        if sol_tuple not in unique_solutions or fitness < unique_solutions[sol_tuple]:
+            unique_solutions[sol_tuple] = fitness
+    sorted_solutions = sorted(unique_solutions.items(), key=lambda item: item[1])
+    return [(fit, np.array(sol)) for sol, fit in sorted_solutions]
 
 # --- Script Principal ---
 if __name__ == "__main__":
@@ -346,6 +396,8 @@ if __name__ == "__main__":
     all_results = {}
     all_convergence_curves = []
     convergence_labels = []
+    top_solutions_to_train = {}
+    all_candidate_solutions = {}
 
     # --- 5. Otimização com BDA ---
     print("\n\n--- 5. Otimização com Binary Dragonfly Algorithm (BDA) ---")
@@ -371,9 +423,7 @@ if __name__ == "__main__":
         seed=RANDOM_SEED,
         verbose_optimizer_level=VERBOSE_OPTIMIZER_LEVEL,
     )
-    Sf_bda, best_fitness_bda, convergence_bda, acc_curve_bda, nfeat_curve_bda = (
-        bda.run()
-    )
+    Sf_bda, best_fitness_bda, convergence_bda, acc_curve_bda, nfeat_curve_bda, bda_history = bda.run()
     bda_diagnostic_curves = {
         "Melhor Fitness": convergence_bda,
         "Acurácia do Melhor Agente (%)": np.array(acc_curve_bda) * 100,
@@ -414,9 +464,16 @@ if __name__ == "__main__":
     }
     all_convergence_curves.append(convergence_bda)
     convergence_labels.append("BDA")
-    print(
-        f"Tempo de otimização BDA: {(time.time() - start_time_bda_opt)/60:.2f} minutos"
-    )
+    all_candidate_solutions["BDA"] = get_all_unique_solutions_sorted(bda_history)
+    print(f"BDA encontrou {len(all_candidate_solutions['BDA'])} soluções únicas.")
+    print(f"Tempo de otimização BDA: {(time.time() - start_time_bda_opt)/60:.2f} minutos")
+    top_10_bda = get_top_n_unique_solutions(bda_history, n=20)
+    top_solutions_to_train["BDA"] = top_10_bda
+    print(f"\nBDA: Top {len(top_10_bda)} soluções únicas encontradas.")
+    for i, (fit, sol) in enumerate(top_10_bda):
+        print(f"  - Rank {i+1}: Fitness={fit:.4f}, Features={np.sum(sol)}")
+        all_results[f"BDA-Rank-{i+1}_opt_fitness"] = fit # Salva o fitness para usar depois
+
     gc.collect()
 
     # --- 6. Otimização com BPSO ---
@@ -494,161 +551,127 @@ if __name__ == "__main__":
     #        filename="optimizers_convergence_knn_fitness.png",
     #    )
 
+    plot_convergence_curves(all_convergence_curves, convergence_labels, title="Convergência dos Otimizadores", filename="optimizers_convergence.png")
+    plot_feature_count_distribution(all_candidate_solutions, filename="feature_count_distribution.png")
+
     # --- 7. Treinamento e Avaliação Final da DNN ---
     print("\n\n--- 7. Treinamento e Avaliação Final dos Modelos DNN ---")
-    # Combinar X_train_feat_opt e X_val_feat_combine para o treino final da DNN
-    # Os rótulos correspondentes são y_train_labels e y_val_labels
-    X_train_full_feat_final = np.concatenate(
-        (X_train_feat_opt, X_val_feat_combine), axis=0
-    )
+    X_train_full_feat_final = np.concatenate((X_train_feat_opt, X_val_feat_combine), axis=0)
     y_train_full_labels_final = np.concatenate((y_train_labels, y_val_labels), axis=0)
 
-    # O conjunto de teste para a DNN final é X_test_feat_final e y_test_labels
+    for algo_name, candidate_solutions in all_candidate_solutions.items():
+        print(f"\n--- Processando Candidatos de {algo_name} ---")
+        
+        # Filtra os candidatos se a flag estiver ativa
+        if ENABLE_FEATURE_COUNT_FILTER:
+            print(f"Filtrando candidatos de {algo_name} para {TARGET_FEATURE_COUNT} features...")
+            filtered_candidates = [(f, s) for f, s in candidate_solutions if np.sum(s) == TARGET_FEATURE_COUNT]
+            print(f"Encontrados {len(filtered_candidates)} candidatos com o número de features alvo.")
+        else:
+            filtered_candidates = candidate_solutions
 
-    # BDA+DNN
-    metrics_bda_dnn, history_bda_dnn = train_and_evaluate_final_model(
-        "BDA+DNN",
-        Sf_bda,
-        X_train_full_feat_final,
-        y_train_full_labels_final,  # Dados de treino combinados
-        X_test_feat_final,
-        y_test_labels,  # Dados de teste
-        DNN_TRAINING_PARAMS_FINAL,
-        class_names,
-    )
-    if metrics_bda_dnn:
-        all_results["bda_dnn_final_eval"] = metrics_bda_dnn
+        if not filtered_candidates:
+            print(f"Nenhum candidato de {algo_name} sobrou após a filtragem.")
+            continue
 
-    # BPSO+DNN
-    #metrics_bpso_dnn, history_bpso_dnn = train_and_evaluate_final_model(
-    #    "BPSO+DNN",
-    #    Sf_bpso,
-    #    X_train_full_feat_final,
-    #    y_train_full_labels_final,
-    #    X_test_feat_final,
-    #    y_test_labels,
-    #    DNN_TRAINING_PARAMS_FINAL,
-    #    class_names,
-    #)
-    #if metrics_bpso_dnn:
-    #    all_results["bpso_dnn_final_eval"] = metrics_bpso_dnn
+        # Novo Loop de Treinamento com Limiar de Qualidade
+        final_good_model_count = 0
+        candidate_idx = 0
+        
+        while final_good_model_count < MAX_FINAL_MODELS_TO_KEEP and candidate_idx < len(filtered_candidates):
+            fitness_score, solution_vector = filtered_candidates[candidate_idx]
+            num_features = np.sum(solution_vector)
+            
+            # O rank é baseado na posição na lista de candidatos (já ordenada por fitness)
+            model_rank = candidate_idx + 1 
+            model_name = f"{algo_name}-F{num_features}-Rank{model_rank}"
+
+            print(f"\n>>> Tentando treinar modelo {final_good_model_count + 1}/{MAX_FINAL_MODELS_TO_KEEP} para {algo_name}...")
+            
+            metrics, history_data = train_and_evaluate_final_model(
+                model_name=model_name,
+                selected_features_vector=solution_vector,
+                X_train_full_all_feat=X_train_full_feat_final,
+                y_train_full=y_train_full_labels_final,
+                X_test_all_feat=X_test_feat_final,
+                y_test=y_test_labels,
+                dnn_params=DNN_TRAINING_PARAMS_FINAL,
+                class_names=class_names,
+                opt_fitness_score=fitness_score
+            )
+            
+            candidate_idx += 1 # Sempre avança para o próximo candidato
+
+            if metrics and metrics.get("accuracy", 0) >= FINAL_MODEL_ACCURACY_THRESHOLD:
+                print(f"+++ SUCESSO: Modelo {model_name} atingiu {metrics['accuracy']:.2%} de acurácia. Mantendo.")
+                final_good_model_count += 1
+                all_results[f"{model_name}_final_eval"] = metrics
+            elif metrics:
+                print(f"--- DESCARTADO: Modelo {model_name} com acurácia de {metrics['accuracy']:.2%}, abaixo do limiar de {FINAL_MODEL_ACCURACY_THRESHOLD:.0%}.")
+            else:
+                print(f"### FALHA: Treinamento para {model_name} não produziu métricas. Descartando.")
+
+        if final_good_model_count < MAX_FINAL_MODELS_TO_KEEP:
+            print(f"\nAVISO: Não foi possível encontrar {MAX_FINAL_MODELS_TO_KEEP} modelos para {algo_name} que satisfizessem o limiar de acurácia. Encontrados: {final_good_model_count}.")
 
     # --- 8. Salvar Resultados Consolidados ---
-    results_file_path = os.path.join(
-        RESULTS_DIR, "all_pipeline_results_knn_fitness.json"
-    )
+    results_file_path = os.path.join(RUN_RESULTS_DIR, "all_pipeline_results.json")
     try:
         with open(results_file_path, "w") as f:
-            json.dump(
-                all_results, f, indent=4, cls=utils_module.NumpyEncoder
-            )
+            json.dump(all_results, f, indent=4, cls=utils_module.NumpyEncoder)
         print(f"\nResultados consolidados salvos em: {results_file_path}")
     except Exception as e:
         print(f"Erro ao salvar resultados consolidados: {e}")
 
-    # --- Tabela Comparativa ---
+    # --- 9. Tabela Comparativa ---
     print("\n\n--- Tabela Comparativa de Resultados (Conjunto de Teste) ---")
-    print(
-        "-----------------------------------------------------------------------------------------------------------------"
-    )
-    print(
-        "| Algoritmo | Features Sel. | Acurácia (%) | Sens_Cl0 (%) | Sens_Cl1 (%) | Sens_Cl2 (%) | Esp_Cl0 (%) | Esp_Cl1 (%) | Esp_Cl2 (%) | F1_Macro (%) |"
-    )
-    print(
-        "|-----------|---------------|--------------|--------------|--------------|--------------|-------------|-------------|-------------|--------------|"
-    )
+    print("------------------------------------------------------------------------------------------------------------------------------------------")
+    print("| Modelo              | Fitness Opt. | Features Sel. | Acurácia (%) | Sens_Cl0 (%) | Sens_Cl1 (%) | Sens_Cl2 (%) | Esp_Cl0 (%) | Esp_Cl1 (%) | Esp_Cl2 (%) | F1_Macro (%) |")
+    print("|---------------------|--------------|---------------|--------------|--------------|--------------|--------------|-------------|-------------|-------------|--------------|")
 
-    def print_results_row_main(algo_name, results_dict_eval):
-        if not results_dict_eval:
-            print(
-                f"| {algo_name:<9} | N/A           | N/A          | N/A          | N/A          | N/A          | N/A         | N/A         | N/A         | N/A          |"
-            )
-            return
-
+    def print_results_row_main(model_name, results_dict_eval):
+        if not results_dict_eval: return
+        
+        fitness = results_dict_eval.get("fitness_score_from_optimizer", "N/A")
         num_feat = results_dict_eval.get("num_selected_features", "N/A")
         acc = results_dict_eval.get("accuracy", 0) * 100
         report = results_dict_eval.get("classification_report", {})
-
-        sens_cl0 = (
-            report.get(class_names[0], {}).get("recall", 0) * 100
-            if class_names and len(class_names) > 0
-            else 0
-        )
-        sens_cl1 = (
-            report.get(class_names[1], {}).get("recall", 0) * 100
-            if class_names and len(class_names) > 1
-            else 0
-        )
-        sens_cl2 = (
-            report.get(class_names[2], {}).get("recall", 0) * 100
-            if class_names and len(class_names) > 2
-            else 0
-        )
-
+        sens_cl0 = report.get(class_names[0], {}).get("recall", 0) * 100
+        sens_cl1 = report.get(class_names[1], {}).get("recall", 0) * 100
+        sens_cl2 = report.get(class_names[2], {}).get("recall", 0) * 100
         f1_macro = report.get("macro avg", {}).get("f1-score", 0) * 100
-
         specificities = results_dict_eval.get("specificities", {})
-        # Nomes de chave para especificidade devem corresponder ao que é salvo por calculate_all_metrics
-        key_spec_cl0 = (
-            f"specificity_{class_names[0].replace(' ', '_').replace('(', '').replace(')', '')}"
-            if class_names and len(class_names) > 0
-            else ""
-        )
-        key_spec_cl1 = (
-            f"specificity_{class_names[1].replace(' ', '_').replace('(', '').replace(')', '')}"
-            if class_names and len(class_names) > 1
-            else ""
-        )
-        key_spec_cl2 = (
-            f"specificity_{class_names[2].replace(' ', '_').replace('(', '').replace(')', '')}"
-            if class_names and len(class_names) > 2
-            else ""
-        )
-
+        key_spec_cl0 = f"specificity_{class_names[0].replace(' ', '_').replace('(', '').replace(')', '')}"
+        key_spec_cl1 = f"specificity_{class_names[1].replace(' ', '_').replace('(', '').replace(')', '')}"
+        key_spec_cl2 = f"specificity_{class_names[2].replace(' ', '_').replace('(', '').replace(')', '')}"
         esp_cl0 = specificities.get(key_spec_cl0, 0) * 100
         esp_cl1 = specificities.get(key_spec_cl1, 0) * 100
         esp_cl2 = specificities.get(key_spec_cl2, 0) * 100
+        fitness_str = f"{fitness:.4f}" if isinstance(fitness, (int, float)) else "N/A"
 
         print(
-            f"| {algo_name:<9} | {str(num_feat):<13} | {acc:^12.2f} | {sens_cl0:^12.2f} | {sens_cl1:^12.2f} | {sens_cl2:^12.2f} | {esp_cl0:^11.2f} | {esp_cl1:^11.2f} | {esp_cl2:^11.2f} | {f1_macro:^12.2f} |"
+            f"| {model_name:<19} | {fitness_str:^12} | {str(num_feat):<13} | {acc:^12.2f} | {sens_cl0:^12.2f} | {sens_cl1:^12.2f} | {sens_cl2:^12.2f} | {esp_cl0:^11.2f} | {esp_cl1:^11.2f} | {esp_cl2:^11.2f} | {f1_macro:^12.2f} |"
         )
+    
+    sorted_results_keys = sorted([k for k in all_results if k.endswith('_final_eval')])
+    for key in sorted_results_keys:
+        model_name_display = key.replace('_final_eval', '')
+        print_results_row_main(model_name_display, all_results[key])
+    
+    print("------------------------------------------------------------------------------------------------------------------------------------------")
 
-    if "bda_dnn_final_eval" in all_results and all_results["bda_dnn_final_eval"]:
-        print_results_row_main("BDA+DNN", all_results["bda_dnn_final_eval"])
-    if "bpso_dnn_final_eval" in all_results and all_results["bpso_dnn_final_eval"]:
-        print_results_row_main("BPSO+DNN", all_results["bpso_dnn_final_eval"])
-    print(
-        "-----------------------------------------------------------------------------------------------------------------"
-    )
+    # --- 10. Plot Comparativo Final ---
+    print("\n\n--- Gerando Gráficos Comparativos Finais ---")
+    final_eval_results_for_plot = {k.replace('_final_eval', ''): v for k, v in all_results.items() if k.endswith('_final_eval')}
 
-    # --- 9. Plot Comparativo Final ---
-    if VERBOSE_OPTIMIZER_LEVEL > 0:
-        print("\n\n--- Gerando Gráficos Comparativos Finais ---", flush=True)
-        final_eval_results_for_plot = {}
-        if (
-            "bda_dnn_final_eval" in all_results
-            and all_results["bda_dnn_final_eval"] is not None
-        ):
-            final_eval_results_for_plot["BDA+DNN"] = all_results["bda_dnn_final_eval"]
-        if (
-            "bpso_dnn_final_eval" in all_results
-            and all_results["bpso_dnn_final_eval"] is not None
-        ):
-            final_eval_results_for_plot["BPSO+DNN"] = all_results["bpso_dnn_final_eval"]
-
-        if final_eval_results_for_plot:
-            plot_final_metrics_comparison_bars(
-                final_eval_results_for_plot,
-                base_filename="final_model_metrics_knn_fitness",
-            )
-        else:
-            print(
-                "Nenhum resultado de avaliação final para plotar gráficos de barras.",
-                flush=True,
-            )
+    if final_eval_results_for_plot:
+        plot_final_metrics_comparison_bars(
+            final_eval_results_for_plot,
+            base_filename="final_model_metrics",
+        )
+    else:
+        print("Nenhum resultado de avaliação final para plotar.")
 
     total_execution_time = time.time() - start_time_total
-    print(
-        f"\nTempo total de execução da pipeline: {total_execution_time/60:.2f} minutos ({total_execution_time:.2f} segundos)"
-    )
+    print(f"\nTempo total de execução da pipeline: {total_execution_time/60:.2f} minutos")
     print("\n--- Fim da Execução ---")

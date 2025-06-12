@@ -10,6 +10,7 @@ from sklearn.preprocessing import StandardScaler
 import pandas as pd
 import seaborn as sns 
 import json
+from collections import Counter
 
 # Flag global para controlar salvamento de plots (para não mostrar interativamente em execuções longas)
 # E diretório para salvar
@@ -25,6 +26,36 @@ class NumpyEncoder(json.JSONEncoder):
             return obj.tolist()
         return super(NumpyEncoder, self).default(obj)
 
+def plot_feature_count_distribution(solutions_dict, filename="feature_count_distribution.png"):
+    """
+    Plota um histograma mostrando a distribuição do número de features
+    nas soluções únicas encontradas por cada otimizador.
+    """
+    all_counts = []
+    for algo_name, solutions in solutions_dict.items():
+        if not solutions:
+            continue
+        # Conta o número de features para cada solução única
+        feature_counts = [np.sum(sol) for fit, sol in solutions]
+        counts = Counter(feature_counts)
+        for num_features, count in counts.items():
+            all_counts.append([algo_name, num_features, count])
+
+    if not all_counts:
+        print("Nenhuma solução para plotar a distribuição de contagem de features.")
+        return
+
+    df = pd.DataFrame(all_counts, columns=['Algoritmo', 'Numero de Features', 'Contagem'])
+
+    fig = plt.figure(figsize=(15, 8))
+    sns.barplot(data=df, x='Numero de Features', y='Contagem', hue='Algoritmo', dodge=True)
+    plt.title('Distribuição da Contagem de Features por Solução Única Encontrada')
+    plt.xlabel('Número de Features Selecionadas')
+    plt.ylabel('Nº de Soluções Únicas Encontradas')
+    plt.xticks(rotation=45)
+    plt.grid(axis='y', linestyle='--', alpha=0.7)
+    plt.tight_layout()
+    _handle_plot(fig, filename, "Distribuição de Features")
 
 def visualize_knn_decision_boundary(
     X_train_all_features,

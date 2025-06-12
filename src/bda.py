@@ -72,6 +72,7 @@ class BinaryDragonflyAlgorithm:
         self.convergence_curve = np.zeros(self.T)
         self.best_accuracy_curve = np.zeros(self.T)
         self.best_num_features_curve = np.zeros(self.T)
+        self.solutions_history = []
 
     def _initialize_population_fitness(self):
         if self.verbose_optimizer_level > 0:
@@ -90,6 +91,7 @@ class BinaryDragonflyAlgorithm:
                 verbose_level=1,
             )
             self.fitness_values[i] = results["fitness"]
+            self.solutions_history.append((self.fitness_values[i], self.positions[i, :].copy()))
             if self.fitness_values[i] < self.food_fitness:
                 self.food_fitness = self.fitness_values[i]
                 self.food_pos = self.positions[i, :].copy()
@@ -218,7 +220,7 @@ class BinaryDragonflyAlgorithm:
                 )
                 current_fitness = results["fitness"]
                 self.fitness_values[i] = current_fitness
-
+                self.solutions_history.append((current_fitness, self.positions[i, :].copy()))
                 if current_fitness < self.food_fitness:
                     self.food_fitness = current_fitness
                     self.food_pos = self.positions[i, :].copy()
@@ -258,6 +260,7 @@ class BinaryDragonflyAlgorithm:
             self.convergence_curve,
             self.best_accuracy_curve,
             self.best_num_features_curve,
+            self.solutions_history,
         )
 
 

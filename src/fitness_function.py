@@ -90,7 +90,7 @@ def evaluate_fitness(binary_feature_vector,
     feature_ratio = num_selected / total_num_features_available
     fitness = alpha * error_rate + beta * feature_ratio
 
-    if verbose_level > 0:
+    if verbose_level > 3:
         print(
             f"[Avaliação {EVALUATION_COUNTER}] Features Selecionadas: {num_selected}/{total_num_features_available}"
         )
