@@ -176,3 +176,7 @@ cython_debug/
 # Pycache specific files
 __pycache__/
 *.py[cod]
+
+results
+/results
+.results
