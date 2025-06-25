@@ -58,22 +58,33 @@ sns.set_theme(
 )
 sns.color_palette("rocket_r", as_cmap=True)
 
-#  CONFIGURAÇÕES DA OTIMIZAÇÃO
-
-KNN_PARAM_GRID = {
-    "n_neighbors": [3, 4, 5, 6, 7, 8],
-    "metric": [
-        "manhattan"
-    ],
-    "weights": ["distance"],
-    "algorithm": ["auto", "ball_tree", "kd_tree"],
-    "leaf_size": [10, 30, 50],
-}
+# CONFIGURAÇÕES DA OTIMIZAÇÃO
+TESTING_PIPELINE = False
+PARALLEL_PROCESSES = 3
+if TESTING_PIPELINE:
+    # Dicionário para testes rapidos do pipeline
+    KNN_PARAM_GRID = {
+        "n_neighbors": [1, 2],
+        "metric": [
+            "manhattan",
+            "minkowski"
+        ],
+        "weights": ["distance", "uniform"],
+        "algorithm": ["ball_tree"],
+        "leaf_size": [30, 50],
+    }
+else:
+    KNN_PARAM_GRID = {
+        "n_neighbors": [4, 5, 6],
+        "metric": ["manhattan"],
+        "weights": ["distance"],
+        "algorithm": ["auto"]
+    }
 
 #  Configurações do BDA e do Dataset
 RANDOM_SEED = 42
 N_AGENTS_BDA = 30
-MAX_ITER_BDA = 50
+MAX_ITER_BDA = 60
 ALPHA_FITNESS = 0.99
 BETA_FITNESS = 0.01
 BASE_DATA_DIR = os.path.join(current_dir, "data")
@@ -115,8 +126,16 @@ def generate_knn_configs(param_grid):
 
 def create_fitness_function(knn_config, X_train_features, y_train_labels):
     """
-    Cria uma função de fitness que encapsula uma configuração específica do KNN.
+    Cria uma função de fitness que encapsula uma configuração do KNN.
     """
+
+    knn_classifier = KNeighborsClassifier(**knn_config)
+    n_folds = 10
+    min_samples_per_class = np.min(np.bincount(y_train_labels))
+    if min_samples_per_class < n_folds:
+        n_folds = max(2, min_samples_per_class)    
+    cv_splitter = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=RANDOM_SEED)
+
 
     def evaluate_fitness_configured(binary_feature_vector, *args, **kwargs):
         """
@@ -125,31 +144,19 @@ def create_fitness_function(knn_config, X_train_features, y_train_labels):
         selected_indices = np.where(binary_feature_vector == 1)[0]
         num_selected = len(selected_indices)
         total_features = len(binary_feature_vector)
-
-        if num_selected == 0:
-            return {
-                "fitness": 1.0,
-                "accuracy": 0.0,
-                "num_features": 0,
-            }
-
         X_train_selected = X_train_features[:, selected_indices]
-        knn = KNeighborsClassifier(**knn_config)
-        n_folds = 10
-        min_samples_per_class = np.min(np.bincount(y_train_labels))
-        if min_samples_per_class < n_folds:
-            n_folds = max(2, min_samples_per_class)
 
-        cv = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=RANDOM_SEED)
+        if (num_selected == 0 or X_train_selected.shape[1] == 0):
+             return { "fitness": 1.0, "accuracy": 0.0, "num_features": 0 }
 
         try:
             accuracies = cross_val_score(
-                knn,
+                knn_classifier,
                 X_train_selected,
                 y_train_labels,
-                cv=cv,
+                cv=cv_splitter,
                 scoring="accuracy",
-                n_jobs=-1,
+                n_jobs=1,
             )
             mean_accuracy = np.mean(accuracies)
         except ValueError:
@@ -199,7 +206,7 @@ def run_optimization_pipeline():
     all_features, feature_names = extract_swt_features(
         processed_data, wavelet=SWT_WAVELET, level=SWT_LEVEL
     )
-
+    
     X_train_feat, X_test_feat, y_train, y_test = train_test_split(
         all_features,
         raw_labels,
@@ -218,7 +225,7 @@ def run_optimization_pipeline():
         f"\n 3. Iniciando Otimização em Lote ({total_runs} configurações de KNN) "
     )
 
-    all_results = Parallel(n_jobs=10, verbose=11)(delayed(process_single_config)(i, config, X_train_feat, y_train, all_features.shape[1]) for i, config in enumerate(knn_configurations))
+    all_results = Parallel(n_jobs=PARALLEL_PROCESSES, verbose=11)(delayed(process_single_config)(i, config, X_train_feat, y_train, all_features.shape[1]) for i, config in enumerate(knn_configurations))
 
     results_df = pd.DataFrame(all_results)
     results_df = results_df.sort_values(by="best_fitness", ascending=True)
@@ -672,22 +679,6 @@ def generate_reports_and_plots(
     plt.close()
     print("Salvo: Gráfico de Tempo de Execução vs. Algoritmo")
 
-    # Relação entre Acurácia, Algoritmo e Leaf Size
-    df_leaf = df.dropna(subset=['leaf_size']).copy()
-    if not df_leaf.empty:
-        df_leaf['leaf_size'] = df_leaf['leaf_size'].astype(int)
-        g = sns.catplot(
-            data=df_leaf, x='algorithm', y='mean_accuracy_cv', hue='leaf_size',
-            kind='bar', palette='magma', height=6, aspect=1.5, legend_out=False
-        )
-        g.fig.suptitle('Acurácia Média (CV) vs. Algoritmo e Tamanho da Folha (Leaf Size)', y=1.03, fontsize=16)
-        g.set_axis_labels('Algoritmo', 'Acurácia Média (CV)', fontsize=12)
-        plt.legend(title='Leaf Size', loc='upper right')
-        plt.tight_layout(rect=[0, 0, 1, 0.96])
-        plt.savefig(os.path.join(RESULTS_DIR, "barplot_accuracy_vs_algo_leafsize.png"), dpi=300)
-        plt.close()
-        print("Salvo: Gráfico de Acurácia vs. Algoritmo e Leaf Size")
-    
     # Swarm Plot para Acurácia vs. Hiperparâmetros
     try:
         fig, axes = plt.subplots(1, 3, figsize=(24, 8), sharey=True)
