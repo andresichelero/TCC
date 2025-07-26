@@ -1,4 +1,5 @@
 # src/utils.py
+from matplotlib import animation
 import numpy as np
 from sklearn.metrics import confusion_matrix, classification_report, accuracy_score
 import matplotlib.pyplot as plt
@@ -25,6 +26,110 @@ class NumpyEncoder(json.JSONEncoder):
         elif isinstance(obj, np.ndarray):
             return obj.tolist()
         return super(NumpyEncoder, self).default(obj)
+
+
+def plot_dragonfly_positions_pca(positions, food_pos, enemy_pos, title, filename):
+    """
+    Plota a distribuição dos agentes (libélulas), incluindo as posições
+    de 'food' (melhor) e 'enemy' (pior), usando PCA para visualização 2D.
+    """
+    if positions.shape[0] == 0:
+        print("Aviso: Não há posições de agentes para plotar.")
+        return
+
+    # Padroniza e aplica PCA
+    scaler = StandardScaler()
+    pca = PCA(n_components=2, random_state=42)
+    
+    # Combina todas as posições para um ajuste consistente do PCA
+    combined_data = np.vstack([positions, food_pos.reshape(1, -1), enemy_pos.reshape(1, -1)])
+    combined_scaled = scaler.fit_transform(combined_data)
+    
+    # Transforma os dados usando o modelo PCA ajustado
+    principal_components = pca.fit_transform(combined_scaled)
+    
+    pos_2d = principal_components[0:positions.shape[0]]
+    food_2d = principal_components[positions.shape[0]].reshape(1, -1)
+    enemy_2d = principal_components[positions.shape[0]+1].reshape(1, -1)
+
+    fig = plt.figure(figsize=(11, 9))
+    # Plot de todos os agentes
+    plt.scatter(pos_2d[:, 0], pos_2d[:, 1], c='blue', alpha=0.6, label='Agentes')
+    # Destaque para a melhor solução (Food)
+    plt.scatter(food_2d[:, 0], food_2d[:, 1], c='green', marker='*', s=250, edgecolor='black', label='Melhor (Food)')
+    # Destaque para a pior solução (Enemy)
+    plt.scatter(enemy_2d[:, 0], enemy_2d[:, 1], c='red', marker='X', s=200, edgecolor='black', label='Pior (Enemy)')
+
+    plt.title(title)
+    plt.xlabel(f"Componente Principal 1 ({pca.explained_variance_ratio_[0]*100:.2f}%)")
+    plt.ylabel(f"Componente Principal 2 ({pca.explained_variance_ratio_[1]*100:.2f}%)")
+    plt.legend()
+    plt.grid(True)
+    _handle_plot(fig, filename, title)
+
+
+def animate_dragonfly_movement_pca(positions_history, title, filename, run_results_dir):
+    """
+    Cria e salva uma animação (GIF) do movimento dos agentes ao longo das iterações.
+    """
+    if not positions_history:
+        print("Aviso: Histórico de posições está vazio. Não é possível criar a animação.")
+        return
+
+    print("Preparando dados para a animação (isso pode levar um momento)...")
+    # Combina todas as posições de todas as iterações para um ajuste único do PCA
+    all_positions_flat = np.vstack(positions_history)
+
+    scaler = StandardScaler()
+    pca = PCA(n_components=2, random_state=42)
+    
+    # Ajusta o scaler e o PCA com todos os pontos para manter uma referência consistente
+    all_positions_scaled = scaler.fit_transform(all_positions_flat)
+    pca.fit(all_positions_scaled)
+
+    # Transforma as posições de cada iteração para o espaço 2D
+    positions_2d_history = []
+    for pos_matrix in positions_history:
+        scaled_pos = scaler.transform(pos_matrix)
+        positions_2d_history.append(pca.transform(scaled_pos))
+    
+    fig, ax = plt.subplots(figsize=(10, 8))
+    
+    # Limites dos eixos baseados em todo o histórico
+    all_2d_flat = np.vstack(positions_2d_history)
+    x_min, x_max = all_2d_flat[:, 0].min() - 1, all_2d_flat[:, 0].max() + 1
+    y_min, y_max = all_2d_flat[:, 1].min() - 1, all_2d_flat[:, 1].max() + 1
+    ax.set_xlim(x_min, x_max)
+    ax.set_ylim(y_min, y_max)
+    
+    ax.set_title(title)
+    ax.set_xlabel(f"Componente Principal 1 ({pca.explained_variance_ratio_[0]*100:.2f}%)")
+    ax.set_ylabel(f"Componente Principal 2 ({pca.explained_variance_ratio_[1]*100:.2f}%)")
+    
+    # O 'scatter' plot que será atualizado a cada frame
+    scatter = ax.scatter([], [], c='cyan', edgecolor='b')
+    iter_text = ax.text(0.02, 0.95, '', transform=ax.transAxes)
+
+    def update(frame):
+        # Atualiza a posição dos pontos
+        scatter.set_offsets(positions_2d_history[frame])
+        # Atualiza o texto da iteração
+        iter_text.set_text(f'Iteração: {frame + 1}/{len(positions_2d_history)}')
+        return scatter, iter_text
+
+    # Cria a animação
+    anim = animation.FuncAnimation(fig, update, frames=len(positions_2d_history), interval=200, blit=True)
+
+    # Salva a animação como GIF
+    output_path = os.path.join(run_results_dir, "plots", filename)
+    print(f"Salvando animação em: {output_path} ... (Isso pode ser demorado)")
+    try:
+        anim.save(output_path, writer='pillow', fps=5)
+        print("Animação salva com sucesso.")
+    except Exception as e:
+        print(f"Erro ao salvar a animação: {e}")
+    plt.close(fig)
+
 
 def plot_feature_count_distribution(solutions_dict, filename="feature_count_distribution.png"):
     """
@@ -56,6 +161,7 @@ def plot_feature_count_distribution(solutions_dict, filename="feature_count_dist
     plt.grid(axis='y', linestyle='--', alpha=0.7)
     plt.tight_layout()
     _handle_plot(fig, filename, "Distribuição de Features")
+
 
 def visualize_knn_decision_boundary(
     X_train_all_features,
@@ -171,6 +277,7 @@ def calculate_specificity(y_true, y_pred, class_label, num_classes):
 
     specificity = tn / (tn + fp) if (tn + fp) > 0 else 0.0
     return specificity
+
 
 def calculate_all_metrics(y_true, y_pred, class_names=None):
     """

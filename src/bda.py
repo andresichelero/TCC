@@ -114,7 +114,8 @@ class BinaryDragonflyAlgorithm:
 
     def run(self):
         self._initialize_population_fitness()
-
+        w_max = 0.9
+        w_min = 0.2
         if np.isinf(self.food_fitness) and self.N > 0:
             if self.verbose_optimizer_level > 0:
                 print(
@@ -131,19 +132,14 @@ class BinaryDragonflyAlgorithm:
         if self.verbose_optimizer_level > 0:
             print(f"\nIniciando otimização BDA por {self.T} iterações...")
 
-        for t in tqdm(
-            range(self.T),
-            desc="BDA Iterations",
-            disable=self.verbose_optimizer_level == 0,
-        ):
-            gc.collect()
+        for t in tqdm(range(self.T), desc="BDA Iterations", disable=self.verbose_optimizer_level == 0):
             if self.T > 1:
                 ratio = t / (self.T - 1)
             else:
                 ratio = 1.0
             current_tau = (1.0 - ratio) * self.tau_max + ratio * self.tau_min
             current_tau = max(current_tau, 1e-5)
-            current_w = self.w_inertia
+            current_w = w_max - t * ((w_max - w_min) / self.T)
 
             for i in range(self.N):
                 S_i = np.zeros(self.dim)

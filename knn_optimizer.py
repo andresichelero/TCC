@@ -75,7 +75,7 @@ if TESTING_PIPELINE:
     }
 else:
     KNN_PARAM_GRID = {
-        "n_neighbors": [4, 5, 6],
+        "n_neighbors": [3, 4, 5, 6, 7, 8],
         "metric": ["manhattan"],
         "weights": ["distance"],
         "algorithm": ["auto"]
@@ -83,7 +83,7 @@ else:
 
 #  Configurações do BDA e do Dataset
 RANDOM_SEED = 42
-N_AGENTS_BDA = 30
+N_AGENTS_BDA = 50
 MAX_ITER_BDA = 60
 ALPHA_FITNESS = 0.99
 BETA_FITNESS = 0.01

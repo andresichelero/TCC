@@ -3,10 +3,11 @@ import gc, os, time, datetime, json, sys
 import pywt
 import numpy as np
 import tensorflow as tf
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.model_selection import StratifiedKFold, cross_val_score
 from src.data_loader import load_bonn_data, preprocess_eeg, split_data
 from src.feature_extractor import extract_swt_features
 from src.dnn_model import build_dnn_model
-from src.fitness_function import evaluate_fitness
 from src.bda import BinaryDragonflyAlgorithm
 from src.bpso import BinaryPSO
 from src.utils import (
@@ -15,11 +16,13 @@ from src.utils import (
     plot_data_distribution_pca,
     plot_eeg_segments,
     plot_feature_count_distribution,
-    plot_optimization_diagnostics,
-    plot_swt_coefficients,
-    plot_dnn_training_history,
     plot_final_metrics_comparison_bars,
+    plot_optimization_diagnostics,
+    plot_dnn_training_history,
+    plot_swt_coefficients,
     visualize_knn_decision_boundary,
+    plot_dragonfly_positions_pca,
+    animate_dragonfly_movement_pca,
 )
 import src.utils as utils_module
 
@@ -29,12 +32,9 @@ sys.path.insert(0, os.path.join(current_dir, "src"))
 # --- Configurações Globais ---
 BASE_DATA_DIR = os.path.join(current_dir, "data")
 RESULTS_DIR = os.path.join(current_dir, "results")
-#PLOTS_DIR_MAIN = os.path.join(RESULTS_DIR, "plots")
-#os.makedirs(PLOTS_DIR_MAIN, exist_ok=True)
 os.makedirs(RESULTS_DIR, exist_ok=True)
 
 # Diretórios de Resultados Dinâmicos
-# Cria uma pasta única para cada execução para não sobrescrever resultados.
 run_timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 BASE_RESULTS_DIR = os.path.join(current_dir, "results")
 RUN_RESULTS_DIR = os.path.join(BASE_RESULTS_DIR, f"run_{run_timestamp}")
@@ -58,8 +58,8 @@ utils_module.PLOTS_DIR = PLOTS_DIR_MAIN
 
 # --- CONFIGURAÇÕES PARA TREINAMENTO AVANÇADO ---
 ENABLE_FEATURE_COUNT_FILTER = True      # Mude para True para filtrar pelo número de features
-TARGET_FEATURE_COUNT = 18               # O número exato de features a serem treinadas
-FINAL_MODEL_ACCURACY_THRESHOLD = 0.96   # Acurácia mínima de 85% para um modelo ser considerado "bom"
+TARGET_FEATURE_COUNT = 19               # O número exato de features a serem treinadas
+FINAL_MODEL_ACCURACY_THRESHOLD = 0.95   # Acurácia mínima de 85% para um modelo ser considerado "bom"
 MAX_FINAL_MODELS_TO_KEEP = 15            # Tentar encontrar até 5 modelos que passem no limiar
 
 # Parâmetros do Dataset e Pré-processamento
@@ -71,7 +71,7 @@ SWT_LEVEL = 4
 
 # Parâmetros da Divisão de Dados
 TEST_SIZE = 0.20
-VAL_SIZE = 0.15 
+VAL_SIZE = 0.15
 
 # Parâmetros da DNN para Treino Final
 DNN_TRAINING_PARAMS_FINAL = {"epochs": 250, "batch_size": 16, "patience": 30}
@@ -87,8 +87,76 @@ BETA_FITNESS = 0.01
 # Nível de verbosidade para os otimizadores
 VERBOSE_OPTIMIZER_LEVEL = 1
 
+# Funções Auxiliares
 
-# --- Funções Auxiliares para o Main ---
+def create_fitness_function_for_optimizer(X_train_features, y_train_labels, alpha, beta):
+    """
+    Cria e retorna uma função de fitness otimizada que encapsula uma configuração de KNN.
+    O classificador e o StratifiedKFold são instanciados uma única vez aqui.
+    """
+    # Configuração do KNN (pode ser parametrizada se necessário)
+    knn_classifier = KNeighborsClassifier(n_neighbors=6, metric='manhattan', weights='distance')
+    
+    # Validação Cruzada Robusta
+    n_folds = 10
+    min_samples_per_class = np.min(np.bincount(y_train_labels))
+    if min_samples_per_class < n_folds:
+        print(f"Aviso Fitness: A menor classe possui {min_samples_per_class} amostras, "
+              f"o que é menor que n_folds={n_folds}. Ajustando n_folds para {min_samples_per_class}.")
+        n_folds = max(2, min_samples_per_class)
+        
+    cv_splitter = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=RANDOM_SEED)
+
+    def evaluate_fitness_configured(binary_feature_vector, *args, **kwargs):
+        """
+        Função de fitness que será chamada pelo otimizador (e.g., BDA).
+        Reutiliza o knn_classifier e cv_splitter pré-configurados.
+        """
+        selected_indices = np.where(binary_feature_vector == 1)[0]
+        num_selected = len(selected_indices)
+        total_features = len(binary_feature_vector)
+        
+        if num_selected == 0:
+            return {
+                'fitness': alpha * 1.0 + beta * 1.0,
+                'accuracy': 0.0,
+                'num_features': 0
+            }
+
+        X_train_selected = X_train_features[:, selected_indices]
+
+        # Verifica se o n_folds ainda é válido para a dobra atual (pouco provável de mudar, mas seguro)
+        if cv_splitter.get_n_splits() > np.min(np.bincount(y_train_labels)):
+             return { 'fitness': 1.0, 'accuracy': 0.0, 'num_features': num_selected }
+
+        try:
+            # cross_val_score é eficiente e lida com a divisão de dados internamente
+            accuracies = cross_val_score(
+                knn_classifier,
+                X_train_selected,
+                y_train_labels,
+                cv=cv_splitter,
+                scoring="accuracy",
+                n_jobs=-1,  # Utiliza todos os cores disponíveis para a validação cruzada
+            )
+            mean_accuracy = np.mean(accuracies)
+        except ValueError:
+            # Caso ocorra um erro (e.g., uma dobra de CV não tem membros de uma classe)
+            mean_accuracy = 0.0
+
+        error_rate = 1.0 - mean_accuracy
+        feature_ratio = num_selected / total_features
+        fitness = alpha * error_rate + beta * feature_ratio
+
+        return {
+            "fitness": fitness,
+            "accuracy": mean_accuracy,
+            "num_features": num_selected,
+        }
+
+    return evaluate_fitness_configured
+
+
 def train_and_evaluate_final_model(
     model_name,
     selected_features_vector,
@@ -134,13 +202,12 @@ def train_and_evaluate_final_model(
         y_train_full,
         epochs=dnn_params.get("epochs", 150),
         batch_size=dnn_params.get("batch_size", 128),
-        validation_split=0.1,  # Usa 10% do (treino+val original) para validação interna do treino final
+        validation_split=0.15,
         callbacks=[early_stopping_final],
         verbose=1 if VERBOSE_OPTIMIZER_LEVEL > 0 else 0,
     )
 
     history_data = history.history
-
     plot_dnn_training_history(
         history_data,
         title=f"Histórico de Treino Final - {model_name}",
@@ -196,6 +263,7 @@ def get_top_n_unique_solutions(history, n=20):
     top_n = [(fit, np.array(sol)) for sol, fit in sorted_solutions[:n]]
     return top_n
 
+
 def get_all_unique_solutions_sorted(history):
     if not history: return []
     unique_solutions = {}
@@ -229,13 +297,10 @@ if __name__ == "__main__":
     try:
         raw_data, raw_labels = load_bonn_data(BASE_DATA_DIR)
     except Exception as e:
-        print(
-            f"Falha ao carregar dados: {e}. Verifique o caminho e formato do dataset."
-        )
+        print(f"Falha ao carregar dados: {e}. Verifique o caminho e formato do dataset.")
         sys.exit(1)
 
     class_names = ["Normal (0)", "Interictal (1)", "Ictal (2)"]
-
     if VERBOSE_OPTIMIZER_LEVEL > 0:
         print("\nPlotando exemplos de sinais EEG brutos...", flush=True)
         plot_eeg_segments(
@@ -402,28 +467,62 @@ if __name__ == "__main__":
     # --- 5. Otimização com BDA ---
     print("\n\n--- 5. Otimização com Binary Dragonfly Algorithm (BDA) ---")
     start_time_bda_opt = time.time()
+    
+    # Cria a função de fitness otimizada ANTES de instanciar o BDA
+    fitness_function_for_bda = create_fitness_function_for_optimizer(
+        X_train_feat_opt, y_train_labels, ALPHA_FITNESS, BETA_FITNESS
+    )
+
     bda = BinaryDragonflyAlgorithm(
         N=N_AGENTS_OPTIMIZERS,
         T=T_MAX_ITER_OPTIMIZERS,
         dim=DIM_FEATURES,
-        fitness_func=evaluate_fitness,
+        fitness_func=fitness_function_for_bda,
         X_train_feat=X_train_feat_opt,
-        y_train=y_train_labels,  # Passa X_train_feat_opt e y_train_labels
-        # X_val_feat, y_val, dnn_params, verbose_fitness removidos da chamada do construtor
-        s=0.1,
-        a=0.1,
-        c_cohesion=0.7,
-        f_food=1.0,
-        e_enemy=1.0,
-        w_inertia=0.85,  # Parâmetros do artigo
-        tau_min=0.01,
-        tau_max=4.0,
+        y_train=y_train_labels,
+        s=0.1, a=0.1, c_cohesion=0.7, f_food=1.0, e_enemy=1.0, w_inertia=0.85,
+        tau_min=0.01, tau_max=4.0,
         alpha_fitness=ALPHA_FITNESS,
         beta_fitness=BETA_FITNESS,
         seed=RANDOM_SEED,
         verbose_optimizer_level=VERBOSE_OPTIMIZER_LEVEL,
     )
-    Sf_bda, best_fitness_bda, convergence_bda, acc_curve_bda, nfeat_curve_bda, bda_history = bda.run()
+    Sf_bda, best_fitness_bda, convergence_bda, acc_curve_bda, nfeat_curve_bda, bda_history, bda_positions_history = bda.run()
+
+    # --- Visualização Gráfica dos Agentes BDA ---
+    if bda_positions_history:
+        print("\nPlotando a distribuição inicial dos agentes BDA (PCA)...")
+        # Posições iniciais são o primeiro item do histórico
+        plot_dragonfly_positions_pca(
+            positions=bda_positions_history[0],
+            food_pos=bda.food_pos, # Posição inicial da 'food'
+            enemy_pos=bda.enemy_pos, # Posição inicial do 'enemy'
+            title="Distribuição Inicial dos Agentes BDA (PCA)",
+            filename="bda_initial_positions.png"
+        )
+
+        print("Plotando a distribuição final dos agentes BDA (PCA)...")
+        # Posições finais são o último item do histórico
+        plot_dragonfly_positions_pca(
+            positions=bda_positions_history[-1],
+            food_pos=Sf_bda, # Posição final da 'food' é a melhor solução
+            enemy_pos=bda.enemy_pos, # Posição final do 'enemy'
+            title="Distribuição Final dos Agentes BDA (PCA)",
+            filename="bda_final_positions.png"
+        )
+
+        print("Gerando animação do movimento dos agentes BDA (PCA)...")
+        # A função de animação foi modificada para receber o diretório de resultados
+        animate_dragonfly_movement_pca(
+            positions_history=bda_positions_history,
+            title="Movimento dos Agentes BDA ao Longo das Iterações (PCA)",
+            filename="bda_movement_animation.gif",
+            run_results_dir=RUN_RESULTS_DIR 
+        )
+    else:
+        print("Não foi possível gerar os plots de posição dos agentes pois o histórico está vazio.")
+
+
     bda_diagnostic_curves = {
         "Melhor Fitness": convergence_bda,
         "Acurácia do Melhor Agente (%)": np.array(acc_curve_bda) * 100,

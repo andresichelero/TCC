@@ -52,7 +52,7 @@ def evaluate_fitness(binary_feature_vector,
     # Configuração do KNN e Validação Cruzada
     # O artigo menciona KNN com 10-fold cross-validation.
     # k=5 é um valor comum para n_neighbors, o artigo não especifica.
-    knn = KNeighborsClassifier(n_neighbors=5, metric='manhattan', weights='distance')
+    knn = KNeighborsClassifier(n_neighbors=5, metric='manhattan', weights='distance', algorithm="kd_tree")
     n_folds = 10
 
     min_samples_per_class_in_ytrain = np.min(np.bincount(y_train))
