@@ -57,10 +57,10 @@ utils_module.SAVE_PLOTS = SAVE_PLOTS_DEFAULT
 utils_module.PLOTS_DIR = PLOTS_DIR_MAIN
 
 # --- CONFIGURAÇÕES PARA TREINAMENTO AVANÇADO ---
-ENABLE_FEATURE_COUNT_FILTER = True      # Mude para True para filtrar pelo número de features
+ENABLE_FEATURE_COUNT_FILTER = False      # Mude para True para filtrar pelo número de features
 TARGET_FEATURE_COUNT = 19               # O número exato de features a serem treinadas
 FINAL_MODEL_ACCURACY_THRESHOLD = 0.95   # Acurácia mínima de 85% para um modelo ser considerado "bom"
-MAX_FINAL_MODELS_TO_KEEP = 15            # Tentar encontrar até 5 modelos que passem no limiar
+MAX_FINAL_MODELS_TO_KEEP = 5            # Tentar encontrar até 5 modelos que passem no limiar
 
 # Parâmetros do Dataset e Pré-processamento
 FS = 173.61
@@ -77,8 +77,8 @@ VAL_SIZE = 0.15
 DNN_TRAINING_PARAMS_FINAL = {"epochs": 250, "batch_size": 16, "patience": 30}
 
 # Parâmetros dos Otimizadores
-N_AGENTS_OPTIMIZERS = 10  # Artigo: population_size = 10
-T_MAX_ITER_OPTIMIZERS = 100  # Artigo: iterations = 100
+N_AGENTS_OPTIMIZERS = 30  # Artigo: population_size = 10
+T_MAX_ITER_OPTIMIZERS = 150  # Artigo: iterations = 100
 
 # Parâmetros Fitness (Conforme Artigo)
 ALPHA_FITNESS = 0.99
@@ -486,42 +486,10 @@ if __name__ == "__main__":
         beta_fitness=BETA_FITNESS,
         seed=RANDOM_SEED,
         verbose_optimizer_level=VERBOSE_OPTIMIZER_LEVEL,
+        min_features=15,
+        max_features=28,
     )
-    Sf_bda, best_fitness_bda, convergence_bda, acc_curve_bda, nfeat_curve_bda, bda_history, bda_positions_history = bda.run()
-
-    # --- Visualização Gráfica dos Agentes BDA ---
-    if bda_positions_history:
-        print("\nPlotando a distribuição inicial dos agentes BDA (PCA)...")
-        # Posições iniciais são o primeiro item do histórico
-        plot_dragonfly_positions_pca(
-            positions=bda_positions_history[0],
-            food_pos=bda.food_pos, # Posição inicial da 'food'
-            enemy_pos=bda.enemy_pos, # Posição inicial do 'enemy'
-            title="Distribuição Inicial dos Agentes BDA (PCA)",
-            filename="bda_initial_positions.png"
-        )
-
-        print("Plotando a distribuição final dos agentes BDA (PCA)...")
-        # Posições finais são o último item do histórico
-        plot_dragonfly_positions_pca(
-            positions=bda_positions_history[-1],
-            food_pos=Sf_bda, # Posição final da 'food' é a melhor solução
-            enemy_pos=bda.enemy_pos, # Posição final do 'enemy'
-            title="Distribuição Final dos Agentes BDA (PCA)",
-            filename="bda_final_positions.png"
-        )
-
-        print("Gerando animação do movimento dos agentes BDA (PCA)...")
-        # A função de animação foi modificada para receber o diretório de resultados
-        animate_dragonfly_movement_pca(
-            positions_history=bda_positions_history,
-            title="Movimento dos Agentes BDA ao Longo das Iterações (PCA)",
-            filename="bda_movement_animation.gif",
-            run_results_dir=RUN_RESULTS_DIR 
-        )
-    else:
-        print("Não foi possível gerar os plots de posição dos agentes pois o histórico está vazio.")
-
+    Sf_bda, best_fitness_bda, convergence_bda, acc_curve_bda, nfeat_curve_bda, bda_history = bda.run()
 
     bda_diagnostic_curves = {
         "Melhor Fitness": convergence_bda,

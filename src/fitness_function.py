@@ -5,6 +5,11 @@ from sklearn.model_selection import cross_val_score, StratifiedKFold
 
 EVALUATION_COUNTER = 0
 
+# Definindo os limites de features como constantes globais no módulo
+MIN_FEATURES = 15
+MAX_FEATURES = 28
+
+
 def evaluate_fitness(binary_feature_vector,
                      X_train_all_features,
                      y_train,
@@ -30,21 +35,23 @@ def evaluate_fitness(binary_feature_vector,
     total_num_features_available = len(binary_feature_vector)
     global EVALUATION_COUNTER
     EVALUATION_COUNTER += 1
-    
-    # Penalidade se nenhuma característica for selecionada
-    if num_selected == 0:
-        # Retorna o pior fitness possível: erro máximo (1.0) e razão de features máxima (1.0)
+
+    # Penalidade se o número de features estiver fora do intervalo [MIN_FEATURES, MAX_FEATURES]
+    if not (MIN_FEATURES <= num_selected <= MAX_FEATURES):
+        # Retorna o pior fitness possível para descartar esta solução
+        # num_selected == 0 é coberto por esta condição.
         return {
-            'fitness': alpha * 1.0 + beta * 1.0,
+            'fitness': 1.0,  # Pior fitness (erro máximo + penalidade máxima)
             'accuracy': 0.0,
-            'num_features': 0
+            'num_features': num_selected
         }
+
 
     X_train_selected = X_train_all_features[:, selected_indices]
 
-    if X_train_selected.shape[1] == 0:
+    if X_train_selected.shape[1] == 0: # Checagem de segurança, embora já coberta acima
         return {
-            'fitness': alpha * 1.0 + beta * 1.0,
+            'fitness': 1.0,
             'accuracy': 0.0,
             'num_features': 0
         }
@@ -65,7 +72,7 @@ def evaluate_fitness(binary_feature_vector,
             if verbose_level > 0:
                 print("Fitness Error: Smallest class has < 2 samples. Cannot perform CV. Returning max fitness.")
             return {
-                'fitness': alpha * 1.0 + beta * 1.0,
+                'fitness': 1.0,
                 'accuracy': 0.0,
                 'num_features': num_selected
             }
@@ -81,7 +88,7 @@ def evaluate_fitness(binary_feature_vector,
             print(f"Fitness Error: ValueError during cross_val_score for KNN: {e}. "
                   f"Num selected features: {num_selected}. Returning max fitness.")
         return {
-            'fitness': alpha * 1.0 + beta * 1.0,
+            'fitness': 1.0,
             'accuracy': 0.0,
             'num_features': num_selected
         }

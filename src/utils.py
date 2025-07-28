@@ -68,6 +68,163 @@ def plot_dragonfly_positions_pca(positions, food_pos, enemy_pos, title, filename
     _handle_plot(fig, filename, title)
 
 
+def generate_aggregate_run_plots(
+    all_runs_df,
+    knn_configurations,
+    feature_names,
+    X_train,
+    y_train,
+    X_test,
+    y_test,
+):
+    """
+    Gera gráficos agregados (violin, scatter, heatmap, etc) considerando todas as execuções de cada configuração.
+    """
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    import numpy as np
+    import pandas as pd
+    import os
+
+    if all_runs_df.empty:
+        print("DataFrame de execuções está vazio. Nenhum gráfico agregado será gerado.")
+        return
+
+    print("\nGerando gráficos agregados de todas as execuções...")
+
+    # Diretório para salvar gráficos agregados
+    RESULTS_DIR = os.path.join("results", f"knn_optimization_{knn_configurations['n_neighbors']}_neighbors")
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+    AGG_DIR = os.path.join(RESULTS_DIR, "aggregate_plots")
+    os.makedirs(AGG_DIR, exist_ok=True)
+
+    # Violin plot: distribuição do fitness por configuração
+    try:
+        plt.figure(figsize=(18, 8))
+        sns.violinplot(
+            data=all_runs_df,
+            x="config_id",
+            y="best_fitness",
+            inner="quartile",
+            palette="viridis"
+        )
+        plt.title("Distribuição do Fitness por Configuração (Todas as Execuções)", fontsize=16)
+        plt.xlabel("ID da Configuração", fontsize=12)
+        plt.ylabel("Melhor Fitness (Menor é Melhor)", fontsize=12)
+        plt.tight_layout()
+        plt.savefig(os.path.join(AGG_DIR, "violin_fitness_by_config.png"), dpi=300)
+        plt.close()
+        print("Salvo: Violin plot de fitness por configuração")
+    except Exception as e:
+        print(f"Não foi possível gerar o violin plot agregado: {e}")
+
+    # Violin plot: distribuição da acurácia por configuração
+    try:
+        plt.figure(figsize=(18, 8))
+        sns.violinplot(
+            data=all_runs_df,
+            x="config_id",
+            y="mean_accuracy_cv",
+            inner="quartile",
+            palette="mako"
+        )
+        plt.title("Distribuição da Acurácia por Configuração (Todas as Execuções)", fontsize=16)
+        plt.xlabel("ID da Configuração", fontsize=12)
+        plt.ylabel("Acurácia Média (CV)", fontsize=12)
+        plt.tight_layout()
+        plt.savefig(os.path.join(AGG_DIR, "violin_accuracy_by_config.png"), dpi=300)
+        plt.close()
+        print("Salvo: Violin plot de acurácia por configuração")
+    except Exception as e:
+        print(f"Não foi possível gerar o violin plot de acurácia: {e}")
+
+    # Scatter plot: fitness vs. número de features (todas execuções)
+    try:
+        plt.figure(figsize=(12, 8))
+        sns.scatterplot(
+            data=all_runs_df,
+            x="num_selected_features",
+            y="best_fitness",
+            hue="config_id",
+            palette="tab20",
+            alpha=0.7
+        )
+        plt.title("Fitness vs. Número de Features Selecionadas (Todas as Execuções)", fontsize=16)
+        plt.xlabel("Número de Features Selecionadas", fontsize=12)
+        plt.ylabel("Melhor Fitness", fontsize=12)
+        plt.legend(title="Configuração", bbox_to_anchor=(1.05, 1), loc="upper left")
+        plt.tight_layout()
+        plt.savefig(os.path.join(AGG_DIR, "scatter_fitness_vs_features_all_runs.png"), dpi=300)
+        plt.close()
+        print("Salvo: Scatter plot fitness vs features (todas execuções)")
+    except Exception as e:
+        print(f"Não foi possível gerar o scatter plot fitness vs features: {e}")
+
+    # Heatmap: média da acurácia por configuração e número de vizinhos
+    try:
+        pivot = all_runs_df.pivot_table(
+            values="mean_accuracy_cv",
+            index="config_id",
+            columns="n_neighbors",
+            aggfunc="mean"
+        )
+        plt.figure(figsize=(14, 8))
+        sns.heatmap(pivot, annot=True, fmt=".3f", cmap="viridis")
+        plt.title("Heatmap: Média da Acurácia por Configuração e n_neighbors", fontsize=16)
+        plt.xlabel("n_neighbors", fontsize=12)
+        plt.ylabel("ID da Configuração", fontsize=12)
+        plt.tight_layout()
+        plt.savefig(os.path.join(AGG_DIR, "heatmap_accuracy_by_config_n_neighbors.png"), dpi=300)
+        plt.close()
+        print("Salvo: Heatmap de acurácia por configuração e n_neighbors")
+    except Exception as e:
+        print(f"Não foi possível gerar o heatmap de acurácia: {e}")
+
+    # Boxplot: tempo de execução por configuração
+    try:
+        plt.figure(figsize=(18, 8))
+        sns.boxplot(
+            data=all_runs_df,
+            x="config_id",
+            y="execution_time_sec",
+            palette="rocket"
+        )
+        plt.title("Tempo de Execução por Configuração (Todas as Execuções)", fontsize=16)
+        plt.xlabel("ID da Configuração", fontsize=12)
+        plt.ylabel("Tempo de Execução (s)", fontsize=12)
+        plt.tight_layout()
+        plt.savefig(os.path.join(AGG_DIR, "boxplot_time_by_config.png"), dpi=300)
+        plt.close()
+        print("Salvo: Boxplot de tempo por configuração")
+    except Exception as e:
+        print(f"Não foi possível gerar o boxplot de tempo: {e}")
+
+    # Pairplot: relações entre métricas para todas execuções
+    try:
+        pair_df = all_runs_df[[
+            "mean_accuracy_cv",
+            "best_fitness",
+            "num_selected_features",
+            "execution_time_sec",
+            "config_id"
+        ]].copy()
+        pair_df = pair_df.rename(columns={
+            "mean_accuracy_cv": "Acurácia (CV)",
+            "best_fitness": "Fitness",
+            "num_selected_features": "Qtd. Features",
+            "execution_time_sec": "Tempo (s)",
+            "config_id": "Configuração"
+        })
+        g = sns.pairplot(pair_df, hue="Configuração", palette="tab20", corner=True)
+        g.fig.suptitle("Relações Entre Métricas (Todas as Execuções)", y=1.02, fontsize=16)
+        plt.savefig(os.path.join(AGG_DIR, "pairplot_all_runs.png"), dpi=300)
+        plt.close()
+        print("Salvo: Pairplot de todas execuções")
+    except Exception as e:
+        print(f"Não foi possível gerar o pairplot: {e}")
+
+    print("\nTodos os gráficos agregados de execuções foram gerados com sucesso.")
+
 def animate_dragonfly_movement_pca(positions_history, title, filename, run_results_dir):
     """
     Cria e salva uma animação (GIF) do movimento dos agentes ao longo das iterações.

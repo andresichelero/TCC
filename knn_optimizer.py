@@ -1,4 +1,4 @@
-# optimizer.py
+# knn_optimizer.py
 import os
 import sys
 import time
@@ -16,12 +16,13 @@ from sklearn.metrics import (
     confusion_matrix,
     ConfusionMatrixDisplay,
     classification_report,
-    jaccard_score,
     cohen_kappa_score,
     matthews_corrcoef,
     balanced_accuracy_score,
     log_loss,
 )
+
+from src.utils import generate_aggregate_run_plots
 
 try:
     current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -60,22 +61,20 @@ sns.color_palette("rocket_r", as_cmap=True)
 
 # CONFIGURAÇÕES DA OTIMIZAÇÃO
 TESTING_PIPELINE = False
-PARALLEL_PROCESSES = 3
+PARALLEL_PROCESSES = 4
+N_RUNS_PER_CONFIG = 1  # Número de execuções de BDA por configuração de KNN
 if TESTING_PIPELINE:
-    # Dicionário para testes rapidos do pipeline
+    # Dicionário para testes rápidos do pipeline
     KNN_PARAM_GRID = {
         "n_neighbors": [1, 2],
-        "metric": [
-            "manhattan",
-            "minkowski"
-        ],
+        "metric": ["manhattan", "minkowski"],
         "weights": ["distance", "uniform"],
         "algorithm": ["ball_tree"],
         "leaf_size": [30, 50],
     }
 else:
     KNN_PARAM_GRID = {
-        "n_neighbors": [3, 4, 5, 6, 7, 8],
+        "n_neighbors": [4, 5, 6, 7, 8],
         "metric": ["manhattan"],
         "weights": ["distance"],
         "algorithm": ["auto"]
@@ -84,7 +83,7 @@ else:
 #  Configurações do BDA e do Dataset
 RANDOM_SEED = 42
 N_AGENTS_BDA = 50
-MAX_ITER_BDA = 60
+MAX_ITER_BDA = 125
 ALPHA_FITNESS = 0.99
 BETA_FITNESS = 0.01
 BASE_DATA_DIR = os.path.join(current_dir, "data")
@@ -135,7 +134,6 @@ def create_fitness_function(knn_config, X_train_features, y_train_labels):
     if min_samples_per_class < n_folds:
         n_folds = max(2, min_samples_per_class)    
     cv_splitter = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=RANDOM_SEED)
-
 
     def evaluate_fitness_configured(binary_feature_vector, *args, **kwargs):
         """
@@ -192,7 +190,7 @@ def get_full_metrics(fitness_func, solution_vector, X_train, y_train):
 
 def run_optimization_pipeline():
     """
-    Executa todo o pipeline de otimização.
+    Executa todo o pipeline de otimização, rodando múltiplas execuções por configuração.
     """
     print(" 1. Carregando e Pré-processando Dados ")
     try:
@@ -206,7 +204,7 @@ def run_optimization_pipeline():
     all_features, feature_names = extract_swt_features(
         processed_data, wavelet=SWT_WAVELET, level=SWT_LEVEL
     )
-    
+
     X_train_feat, X_test_feat, y_train, y_test = train_test_split(
         all_features,
         raw_labels,
@@ -214,22 +212,138 @@ def run_optimization_pipeline():
         random_state=RANDOM_SEED,
         stratify=raw_labels,
     )
+    ######### TESTING NEW CODE #########
+
+    # Step 1: Run 10 BDA optimizations and store best feature sets
+    print("\n 3. Executando 20 otimizações BDA para seleção de features...")
+    bda_feature_sets = []
+    bda_fitnesses = []
+    bda_convergence_curves = []
+    for bda_run_idx in range(20):
+        print(f"BDA Run {bda_run_idx+1}/20...")
+        bda = BinaryDragonflyAlgorithm(
+            N=N_AGENTS_BDA,
+            T=MAX_ITER_BDA,
+            dim=all_features.shape[1],
+            fitness_func=create_fitness_function({
+                "n_neighbors": 5,
+                "metric": "manhattan",
+                "weights": "distance",
+                "algorithm": "auto"
+            }, X_train_feat, y_train),
+            X_train_feat=X_train_feat,
+            y_train=y_train,
+            seed=RANDOM_SEED + bda_run_idx * 100,
+            verbose_optimizer_level=0,
+            min_features=15,
+            max_features=28,
+        )
+        best_solution, best_fitness, convergence_curve, _, _, _ = bda.run()
+        bda_feature_sets.append(best_solution)
+        bda_fitnesses.append(best_fitness)
+        bda_convergence_curves.append(convergence_curve)
+
+    print(f"\nBDA feature selection complete. {len(bda_feature_sets)} sets stored.")
+
+    # Step 2: For each KNN config, run KNN tests using each BDA feature set, 3 times per config
+    knn_configurations = generate_knn_configs(KNN_PARAM_GRID)
+    total_configs = len(knn_configurations)
+    print(f"\n 4. Testando cada configuração de KNN ({total_configs} configs), cada uma com 10 conjuntos de features BDA, 3 execuções cada...")
+
+    def knn_test_run(config_id, config, bda_idx, feature_vector, run_idx):
+        selected_indices = np.where(feature_vector == 1)[0]
+        if len(selected_indices) == 0:
+            return None
+        knn = KNeighborsClassifier(**config)
+        knn.fit(X_train_feat[:, selected_indices], y_train)
+        y_pred = knn.predict(X_test_feat[:, selected_indices])
+        y_prob = knn.predict_proba(X_test_feat[:, selected_indices])
+        acc = np.mean(y_pred == y_test)
+        bal_acc = balanced_accuracy_score(y_test, y_pred)
+        kappa = cohen_kappa_score(y_test, y_pred)
+        mcc = matthews_corrcoef(y_test, y_pred)
+        ll = log_loss(y_test, y_prob)
+        return {
+            "config_id": config_id,
+            "bda_idx": bda_idx,
+            "run_idx": run_idx,
+            **config,
+            "num_selected_features": len(selected_indices),
+            "accuracy": acc,
+            "balanced_accuracy": bal_acc,
+            "cohen_kappa": kappa,
+            "mcc": mcc,
+            "log_loss": ll,
+        }
+
+    all_knn_results = []
+    for config_id, config in enumerate(knn_configurations):
+        print(f"\nConfiguração {config_id+1}/{total_configs}: {config}")
+        # Prepare all jobs for this config
+        jobs = []
+        for bda_idx, feature_vector in enumerate(bda_feature_sets):
+            for run_idx in range(1):
+                jobs.append((config_id, config, bda_idx, feature_vector, run_idx))
+        # Run in parallel
+        run_results = Parallel(n_jobs=PARALLEL_PROCESSES, verbose=11)(
+            delayed(knn_test_run)(*job) for job in jobs
+        )
+        # Filter out None results
+        all_knn_results.extend([r for r in run_results if r is not None])
+
+    # Step 3: Aggregate results and save
+    all_knn_df = pd.DataFrame(all_knn_results)
+    all_knn_df.to_csv(os.path.join(RESULTS_DIR, "knn_all_runs_results.csv"), index=False)
+
+    # Aggregate by config
+    agg_df = all_knn_df.groupby(["config_id", "n_neighbors", "metric", "weights", "algorithm"]).agg({
+        "accuracy": ["mean", "std"],
+        "balanced_accuracy": ["mean", "std"],
+        "cohen_kappa": ["mean", "std"],
+        "mcc": ["mean", "std"],
+        "log_loss": ["mean", "std"],
+        "num_selected_features": ["mean", "std"],
+    }).reset_index()
+    agg_df.columns = ["_".join(col).strip("_") for col in agg_df.columns.values]
+    agg_df.to_csv(os.path.join(RESULTS_DIR, "knn_aggregate_results.csv"), index=False)
+
+    ########### END OF TESTING NEW CODE ###########
 
     print(f"Total de {all_features.shape[1]} features extraídas.")
     print(f"Dados de treino: {X_train_feat.shape}, Dados de teste: {X_test_feat.shape}")
 
     knn_configurations = generate_knn_configs(KNN_PARAM_GRID)
-    total_runs = len(knn_configurations)
+    total_configs = len(knn_configurations)
+    print(f"\n 3. Iniciando Otimização em Lote ({total_configs} configurações de KNN, {N_RUNS_PER_CONFIG} execuções cada) ")
 
-    print(
-        f"\n 3. Iniciando Otimização em Lote ({total_runs} configurações de KNN) "
-    )
+    # Lista para armazenar resultados detalhados de cada execução
+    all_runs_results = []
+    # Lista para armazenar o melhor resultado de cada configuração
+    best_per_config = []
 
-    all_results = Parallel(n_jobs=PARALLEL_PROCESSES, verbose=11)(delayed(process_single_config)(i, config, X_train_feat, y_train, all_features.shape[1]) for i, config in enumerate(knn_configurations))
+    for config_id, config in enumerate(knn_configurations):
+        print(f"\nConfiguração {config_id+1}/{total_configs}: {config}")
+        # Executa N_RUNS_PER_CONFIG vezes em paralelo para cada configuração
+        run_results = Parallel(n_jobs=PARALLEL_PROCESSES, verbose=11)(
+            delayed(process_single_config)(
+                config_id, config, X_train_feat, y_train, all_features.shape[1], run_idx
+            ) for run_idx in range(N_RUNS_PER_CONFIG)
+        )
+        # Salva todos os resultados detalhados
+        all_runs_results.extend(run_results)
+        # Seleciona o melhor resultado desta configuração, ignorando execuções None
+        valid_runs = [r for r in run_results if r is not None]
+        if valid_runs:
+            best_run = min(valid_runs, key=lambda x: x["best_fitness"])
+            best_per_config.append(best_run)
 
-    results_df = pd.DataFrame(all_results)
+    # DataFrame com todos os resultados de todas as execuções
+    all_runs_df = pd.DataFrame(all_runs_results)
+    all_runs_df.to_csv(os.path.join(RESULTS_DIR, "optimization_all_runs_results.csv"), index=False)
+
+    # DataFrame com o melhor de cada configuração (como era antes)
+    results_df = pd.DataFrame(best_per_config)
     results_df = results_df.sort_values(by="best_fitness", ascending=True)
-
     df_to_save = results_df.drop(columns=["best_solution_vector", "convergence_curve"])
     df_to_save.to_csv(
         os.path.join(RESULTS_DIR, "optimization_summary_results.csv"), index=False
@@ -240,6 +354,7 @@ def run_optimization_pipeline():
 
     results_df_for_similarity = results_df.sort_index()
 
+    # Gera relatórios e gráficos para o melhor de cada configuração
     generate_reports_and_plots(
         results_df,
         results_df_for_similarity,
@@ -250,15 +365,27 @@ def run_optimization_pipeline():
         feature_names,
     )
 
+    # Gera relatórios e gráficos agregados considerando todas as execuções
+    generate_aggregate_run_plots(
+        all_runs_df,
+        knn_configurations,
+        feature_names,
+        X_train_feat,
+        y_train,
+        X_test_feat,
+        y_test,
+    )
 
-def process_single_config(config_id, config, X_train_feat, y_train, feature_dim):
+
+def process_single_config(config_id, config, X_train_feat, y_train, feature_dim, run_idx=0):
     """
     Executa o pipeline de otimização para uma única configuração de KNN.
-    Esta função será chamada em paralelo.
+    Esta função será chamada em paralelo e múltiplas vezes por configuração.
     """
     start_run_time = time.time()
     fitness_function_for_bda = create_fitness_function(config, X_train_feat, y_train)
 
+    # Semente diferente para cada execução
     bda = BinaryDragonflyAlgorithm(
         N=N_AGENTS_BDA,
         T=MAX_ITER_BDA,
@@ -266,8 +393,10 @@ def process_single_config(config_id, config, X_train_feat, y_train, feature_dim)
         fitness_func=fitness_function_for_bda,
         X_train_feat=X_train_feat,
         y_train=y_train,
-        seed=RANDOM_SEED + config_id,
+        seed=RANDOM_SEED + config_id * 1000 + run_idx,
         verbose_optimizer_level=0,
+        min_features=15,
+        max_features=28,
     )
 
     best_solution, best_fitness, convergence_curve, _, _, _ = bda.run()
@@ -276,9 +405,10 @@ def process_single_config(config_id, config, X_train_feat, y_train, feature_dim)
         fitness_function_for_bda, best_solution, X_train_feat, y_train
     )
     elapsed_time = time.time() - start_run_time
-    print(f"Config {config_id} finalizou em {elapsed_time:.2f}s. Accuracy: {mean_accuracy:.4f}, Features: {num_features}, Fitness: {best_fitness:.4f}")
+    print(f"Config {config_id} Run {run_idx+1} finalizou em {elapsed_time:.2f}s. Accuracy: {mean_accuracy:.4f}, Features: {num_features}, Fitness: {best_fitness:.4f}")
     return {
         "config_id": config_id,
+        "run_idx": run_idx,
         **config,
         "best_fitness": best_fitness,
         "num_selected_features": num_features,
@@ -334,10 +464,6 @@ def generate_reports_and_plots(
         kappa = cohen_kappa_score(y_test, y_pred)
         mcc = matthews_corrcoef(y_test, y_pred)
         ll = log_loss(y_test, y_prob)
-        j_scores_per_class = jaccard_score(
-            y_test, y_pred, average=None, labels=class_labels
-        )
-        j_score_macro = jaccard_score(y_test, y_pred, average="macro")
 
     #  Relatório de Texto
     report_path = os.path.join(RESULTS_DIR, "best_model_classification_report.txt")
@@ -358,7 +484,6 @@ def generate_reports_and_plots(
             f.write("\n" + "-" * 70 + "\n")
             f.write("Métricas de Avaliação Adicionais (Teste):\n\n")
             f.write(f"Acurácia Balanceada: {bal_acc:.4f}\n")
-            f.write(f"Jaccard Score (Macro Avg): {j_score_macro:.4f}\n")
             f.write(f"Cohen's Kappa: {kappa:.4f}\n")
             f.write(f"Matthews Correlation Coefficient (MCC): {mcc:.4f}\n")
             f.write(f"Log Loss: {ll:.4f}\n")
@@ -383,170 +508,97 @@ def generate_reports_and_plots(
         )
         disp2.plot(ax=ax2, values_format=".2%")
         ax2.set_title("Normalizada por Linha (Recall)", fontsize=14)
-        plt.tight_layout(rect=[0, 0.03, 1, 0.94])
+        plt.tight_layout(rect=(0, 0.03, 1, 0.94))
         plt.savefig(
             os.path.join(RESULTS_DIR, "confusion_matrix_best_config.png"), dpi=300
         )
         plt.close(fig)
         print("Salvo: Matriz de Confusão")
 
-    #  Gráfico de Jaccard Score
+    if df_sorted_by_fitness.empty:
+        print("DataFrame de resultados vazio. Nenhum gráfico será gerado.")
+        return
+
+    print("\nGerando relatórios e gráficos para publicação...")
+
+    df = df_sorted_by_fitness.copy()
+    best_config_row = df.iloc[0]
+    best_knn_params = {
+        key: best_config_row[key]
+        for key in KNN_PARAM_GRID.keys()
+        if key in best_config_row and pd.notna(best_config_row[key])
+    }
+    if 'leaf_size' in best_knn_params:
+        best_knn_params['leaf_size'] = int(best_knn_params['leaf_size'])
+    best_feature_vector = best_config_row["best_solution_vector"]
+    selected_indices = np.where(best_feature_vector == 1)[0]
+    class_names = [f"Classe {i}" for i in sorted(np.unique(y_train))]
+    class_labels = sorted(np.unique(y_train))
+
+    #  Avaliação do Melhor Modelo e Cálculo de Métricas
+    y_pred = None
+    y_prob = None
+    report_str = ""
+    cm = None
+    bal_acc = None
+    kappa = None
+    mcc = None
+    ll = None
     if len(selected_indices) > 0:
-        fig, ax = plt.subplots(figsize=(10, 7))
-        sns.barplot(x=class_names, y=j_scores_per_class, palette="plasma", ax=ax)
-        ax.axhline(
-            y=j_score_macro,
-            color="r",
-            linestyle="--",
-            linewidth=2,
-            label=f"Média Macro: {j_score_macro:.3f}",
-        )
-        ax.set_title(f"Jaccard Score por Classe (Melhor Configuração)", fontsize=16)
-        ax.set_xlabel("Classe", fontsize=12)
-        ax.set_ylabel("Jaccard Score", fontsize=12)
-        ax.set_ylim(0, 1.05)
-        ax.legend()
-        for i, score in enumerate(j_scores_per_class):
-            ax.text(
-                i, score + 0.01, f"{score:.3f}", ha="center", va="bottom", fontsize=11
-            )
-        plt.tight_layout()
-        plt.savefig(os.path.join(RESULTS_DIR, "jaccard_score_best_config.png"), dpi=300)
-        plt.close(fig)
-        print("Salvo: Gráfico de Jaccard Score")
+        final_knn = KNeighborsClassifier(**best_knn_params)
+        final_knn.fit(X_train[:, selected_indices], y_train)
+        y_pred = final_knn.predict(X_test[:, selected_indices])
+        y_prob = final_knn.predict_proba(X_test[:, selected_indices])
+        report_str = classification_report(y_test, y_pred, target_names=class_names)
+        cm = confusion_matrix(y_test, y_pred, labels=class_labels)
+        bal_acc = balanced_accuracy_score(y_test, y_pred)
+        kappa = cohen_kappa_score(y_test, y_pred)
+        mcc = matthews_corrcoef(y_test, y_pred)
+        ll = log_loss(y_test, y_prob)
 
-    #  Heatmap de Similaridade Jaccard entre Soluções
-    try:
-        if not df_sorted_by_id["best_solution_vector"].empty:
-            solutions = np.vstack(df_sorted_by_id["best_solution_vector"].values)
-            num_solutions = len(solutions)
-            jaccard_matrix = np.zeros((num_solutions, num_solutions))
-
-            for i in range(num_solutions):
-                for j in range(i, num_solutions):
-                    score = jaccard_score(solutions[i], solutions[j])
-                    jaccard_matrix[i, j] = score
-                    jaccard_matrix[j, i] = score
-
-            plt.figure(figsize=(16, 14))
-            sns.heatmap(jaccard_matrix, cmap="coolwarm", vmin=0, vmax=1)
-            plt.title(
-                "Similaridade de Jaccard Entre as Melhores Soluções de Cada Execução",
-                fontsize=16,
-            )
-            plt.xlabel("ID da Configuração", fontsize=12)
-            plt.ylabel("ID da Configuração", fontsize=12)
-            plt.tight_layout()
-            plt.savefig(
-                os.path.join(RESULTS_DIR, "heatmap_jaccard_similarity_solutions.png"),
-                dpi=300,
-            )
-            plt.close()
-            print("Salvo: Heatmap de Similaridade Jaccard entre Soluções")
-    except Exception as e:
-        print(f"Não foi possível gerar o heatmap de similaridade Jaccard: {e}")
-
-    #  Heatmap de Acurácia vs Hiperparâmetros
-    try:
-        df_for_heatmap = df.copy()
-        df_for_heatmap["p_str"] = df_for_heatmap.get(
-            "p", pd.Series(index=df_for_heatmap.index, dtype=str)
-        ).fillna("")
-        df_for_heatmap["config_label"] = (
-            df_for_heatmap["metric"]
-            + ", "
-            + df_for_heatmap["weights"]
-            + np.where(
-                df_for_heatmap["metric"] == "minkowski",
-                ", p="
-                + df_for_heatmap["p_str"]
-                .astype(str)
-                .str.replace("\.0", "", regex=True),
-                "",
-            )
+    #  Relatório de Texto
+    report_path = os.path.join(RESULTS_DIR, "best_model_classification_report.txt")
+    with open(report_path, "w") as f:
+        f.write("Relatório de Desempenho do Melhor Modelo no Conjunto de Teste\n")
+        f.write("=" * 70 + "\n")
+        f.write(f"Melhor Configuração KNN: {best_knn_params}\n")
+        f.write(
+            f"Número de Features Selecionadas: {len(selected_indices)} de {len(feature_names)}\n"
         )
-        heatmap_data = df_for_heatmap.pivot_table(
-            values="mean_accuracy_cv", index="config_label", columns="n_neighbors"
+        f.write(f"Fitness (CV no Treino): {best_config_row['best_fitness']:.6f}\n")
+        f.write(f"Acurácia (CV no Treino): {best_config_row['mean_accuracy_cv']:.4f}\n")
+        f.write("-" * 70 + "\n")
+        if len(selected_indices) > 0 and y_pred is not None:
+            f.write(report_str)
+            f.write(f"Acurácia Balanceada: {bal_acc:.4f}\n")
+            f.write(f"Cohen's Kappa: {kappa:.4f}\n")
+            f.write(f"Matthews Correlation Coefficient (MCC): {mcc:.4f}\n")
+            f.write(f"Log Loss: {ll:.4f}\n")
+        else:
+            f.write("Nenhuma feature selecionada ou erro na predição.\n")
+    print(f"Salvo: Relatório de Classificação Detalhado em {report_path}")
+
+    #  Matriz de Confusão
+    if len(selected_indices) > 0 and cm is not None and y_pred is not None:
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 7))
+        fig.suptitle(
+            f"Matriz de Confusão da Melhor Configuração KNN\nParâmetros: {best_knn_params}",
+            fontsize=16,
         )
-        plt.figure(figsize=(14, 10))
-        sns.heatmap(
-            heatmap_data,
-            annot=True,
-            fmt=".4f",
-            cmap="viridis",
-            linewidths=0.5,
-            annot_kws={"size": 10},
+        disp1 = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=class_names)
+        disp1.plot(ax=ax1, cmap="Blues", values_format="d")
+        ax1.set_title("Contagens Absolutas", fontsize=14)
+        disp2 = ConfusionMatrixDisplay.from_predictions(
+            y_test, y_pred, display_labels=class_names, cmap="Greens", normalize="true"
         )
-        plt.title("Acurácia Média na Validação Cruzada por Hiperparâmetro", fontsize=16)
-        plt.xlabel("Número de Vizinhos (k)", fontsize=12)
-        plt.ylabel("Configuração (Métrica, Peso, p)", fontsize=12)
-        plt.xticks(rotation=0)
-        plt.yticks(rotation=0)
-        plt.tight_layout()
+        disp2.plot(ax=ax2, values_format=".2%")
+        plt.tight_layout(rect=(0, 0.03, 1, 0.94))
         plt.savefig(
-            os.path.join(RESULTS_DIR, "heatmap_accuracy_vs_params.png"), dpi=300
+            os.path.join(RESULTS_DIR, "confusion_matrix_best_config.png"), dpi=300
         )
-        plt.close()
-        print("Salvo: Heatmap de Acurácia")
-    except Exception as e:
-        print(f"Não foi possível gerar o heatmap de acurácia: {e}")
+        plt.close(fig)
+        print("Salvo: Matriz de Confusão")
 
-    #  Pair Plot das Métricas de Resultado
-    try:
-        pair_df = df[
-            [
-                "mean_accuracy_cv",
-                "best_fitness",
-                "num_selected_features",
-                "execution_time_sec",
-                "metric",
-            ]
-        ].rename(
-            columns={
-                "mean_accuracy_cv": "Acurácia (CV)",
-                "best_fitness": "Fitness",
-                "num_selected_features": "Qtd. Features",
-                "execution_time_sec": "Tempo (s)",
-            }
-        )
-        g = sns.pairplot(pair_df, hue="metric", palette="plasma", corner=True)
-        g.fig.suptitle(
-            "Visão Geral das Relações Entre Métricas de Resultado", y=1.02, fontsize=16
-        )
-        plt.savefig(os.path.join(RESULTS_DIR, "pairplot_results_overview.png"), dpi=300)
-        plt.close()
-        print("Salvo: Pair Plot de Resultados")
-    except Exception as e:
-        print(f"Não foi possível gerar o pair plot: {e}")
-
-    #  Gráfico de Dispersão Trade-off: Acurácia vs. N° de Features
-    plt.figure(figsize=(12, 8))
-    sns.scatterplot(
-        data=df,
-        x="num_selected_features",
-        y="mean_accuracy_cv",
-        hue="best_fitness",
-        size="n_neighbors",
-        style="metric",
-        palette="viridis_r",
-        sizes=(40, 200),
-        alpha=0.8,
-    )
-    plt.title("Trade-off: Acurácia vs. Número de Features Selecionadas", fontsize=16)
-    plt.xlabel("Número de Features Selecionadas", fontsize=12)
-    plt.ylabel("Acurácia Média na Validação Cruzada", fontsize=12)
-    plt.legend(
-        title="Legenda", bbox_to_anchor=(1.05, 1), loc="upper left", frameon=True
-    )
-    plt.grid(True, linestyle="--", alpha=0.6)
-    plt.tight_layout()
-    plt.savefig(
-        os.path.join(RESULTS_DIR, "scatter_accuracy_vs_features_tradeoff.png"), dpi=300
-    )
-    plt.close()
-    print("Salvo: Gráfico de Trade-off Acurácia vs Features")
-
-    #  Gráfico de Fitness vs. Tempo de Execução
     plt.figure(figsize=(10, 7))
     sns.scatterplot(
         data=df,
@@ -594,7 +646,7 @@ def generate_reports_and_plots(
 
     #  Curvas de Convergência
     plt.figure(figsize=(14, 9))
-    top_n = min(5, len(df))
+    top_n = len(df)
     for i in range(top_n):
         row = df.iloc[i]
         params_to_show = {
