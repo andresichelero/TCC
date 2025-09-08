@@ -9,7 +9,6 @@ from src.data_loader import load_bonn_data, preprocess_eeg, split_data
 from src.feature_extractor import extract_swt_features
 from src.dnn_model import build_dnn_model
 from src.bda import BinaryDragonflyAlgorithm
-from src.bpso import BinaryPSO
 from src.utils import (
     calculate_all_metrics,
     plot_convergence_curves,
@@ -343,7 +342,7 @@ if __name__ == "__main__":
     # 4. Extrair Características SWT
     print("\n--- 4. Extraindo Características SWT ---")
     print("Extraindo features para o conjunto de TREINO (usado pelos otimizadores)...")
-    # X_train_feat_opt será usado pelos otimizadores (BDA, BPSO)
+    # X_train_feat_opt será usado pelos otimizadores (BDA)
     X_train_feat_opt, feature_names = extract_swt_features(
         X_train_p, wavelet=SWT_WAVELET, level=SWT_LEVEL
     )
@@ -542,82 +541,6 @@ if __name__ == "__main__":
         all_results[f"BDA-Rank-{i+1}_opt_fitness"] = fit # Salva o fitness para usar depois
 
     gc.collect()
-
-    # --- 6. Otimização com BPSO ---
-    #print("\n\n--- 6. Otimização com Binary Particle Swarm Optimization (BPSO) ---")
-    #start_time_bpso_opt = time.time()
-    #bpso = BinaryPSO(
-#        N=N_AGENTS_OPTIMIZERS,
-#        T=T_MAX_ITER_OPTIMIZERS,
-#        dim=DIM_FEATURES,
-#        fitness_func=evaluate_fitness,
-#        X_train_feat=X_train_feat_opt,
-#        y_train=y_train_labels,
-#        w_max=0.9,
-#        w_min=0.4,
-#        c1=2.0,
-#        c2=2.0,
-#        Vmax=4.0,  # Parâmetros BPSO comuns
-#        alpha_fitness=ALPHA_FITNESS,
-#        beta_fitness=BETA_FITNESS,
-#        seed=RANDOM_SEED,
-#        verbose_optimizer_level=VERBOSE_OPTIMIZER_LEVEL,
-#    )
-    #Sf_bpso, best_fitness_bpso, convergence_bpso, acc_curve_bpso, nfeat_curve_bpso = bpso.run()
-#
-    #bpso_diagnostic_curves = {
-#        "Melhor Fitness": convergence_bpso,
-#        "Acurácia do Melhor Agente (%)": np.array(acc_curve_bpso) * 100,
-#        "Nº de Features do Melhor Agente": nfeat_curve_bpso,
-#    }
-#    #plot_optimization_diagnostics(
-#        bpso_diagnostic_curves,
-#        title="Diagnóstico da Otimização - BPSO",
-#        filename="bpso_diagnostics.png",
-#    )
-#
-    #if Sf_bpso is not None and np.sum(Sf_bda) > 1:
-#        print(
-#            "\nGerando visualização da fronteira de decisão do KNN para a solução final do BPSO..."
-#        )
-#        visualize_knn_decision_boundary(
-#            X_train_feat_opt,  # Dados de treino usados na otimização
-#            y_train_labels,  # Rótulos de treino
-#            Sf_bpso,  # Vetor de features da melhor solução
-#            class_names=class_names,
-#            title="Fronteira de Decisão KNN (Solução Final BPSO)",
-#            filename="bpso_final_solution_knn_boundary.png",
-#        )
-#
-    #all_results["bpso_optimization"] = {
-#       "best_fitness": best_fitness_bpso,
-#       "selected_features_vector": (
-#           Sf_bpso.tolist() if isinstance(Sf_bpso, np.ndarray) else Sf_bpso
-#       ),
-#       "num_selected_features": (
-#           int(np.sum(Sf_bpso)) if isinstance(Sf_bpso, np.ndarray) else 0
-#       ),
-#       "convergence_curve": (
-#           convergence_bpso.tolist()
-#           if isinstance(convergence_bpso, np.ndarray)
-#           else convergence_bpso
-#       ),
-#   }
-    #all_convergence_curves.append(convergence_bpso)
-    #convergence_labels.append("BPSO")
-    #print(
-    #    f"Tempo de otimização BPSO: {(time.time() - start_time_bpso_opt)/60:.2f} minutos"
-    #)
-    #gc.collect()
-
-    #if all_convergence_curves:
-    #    plot_convergence_curves(
-    #        all_convergence_curves,
-    #        convergence_labels,
-    #        title="Convergência dos Otimizadores (Fitness KNN na Validação Cruzada)",
-    #        filename="optimizers_convergence_knn_fitness.png",
-    #    )
-
     plot_convergence_curves(all_convergence_curves, convergence_labels, title="Convergência dos Otimizadores", filename="optimizers_convergence.png")
     plot_feature_count_distribution(all_candidate_solutions, filename="feature_count_distribution.png")
 

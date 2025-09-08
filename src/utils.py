@@ -631,9 +631,9 @@ def plot_dnn_training_history(history, title="Histórico de Treinamento DNN", fi
 def plot_final_metrics_comparison_bars(results_dict, base_filename="final_metrics"):
     """
     Cria gráficos de barras comparando as métricas finais (Acurácia, Precisão, Recall, F1, Especificidade)
-    para diferentes pipelines (e.g., BDA+DNN, BPSO+DNN).
+    para diferentes pipelines (e.g., BDA+DNN).
     Args:
-        results_dict (dict): Dicionário como {'BDA+DNN': metrics_bda, 'BPSO+DNN': metrics_bpso}
+        results_dict (dict): Dicionário como {'BDA+DNN': metrics_bda}
                              onde metrics_* é o dicionário retornado por calculate_all_metrics.
     """
     if not results_dict:
