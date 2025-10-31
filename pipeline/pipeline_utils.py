@@ -56,16 +56,16 @@ VAL_SIZE = 0.15 # Proporção do conjunto de validação
 
 class NumpyEncoder(json.JSONEncoder):
     """Codificador JSON customizado para lidar com tipos de dados NumPy."""
-    def default(self, obj):
-        if isinstance(obj, np.integer):
-            return int(obj)
-        elif isinstance(obj, np.floating):
-            return float(obj)
-        elif isinstance(obj, np.ndarray):
-            return obj.tolist()
-        elif isinstance(obj, (np.bool_,)):
-            return bool(obj)
-        return super(NumpyEncoder, self).default(obj)
+    def default(self, o):
+        if isinstance(o, np.integer):
+            return int(o)
+        elif isinstance(o, np.floating):
+            return float(o)
+        elif isinstance(o, np.ndarray):
+            return o.tolist()
+        elif isinstance(o, (np.bool_,)):
+            return bool(o)
+        return super(NumpyEncoder, self).default(o)
 
 # --- Classes Principais de Lógica ---
 
@@ -123,7 +123,7 @@ class DataHandler:
         """
         Aplica filtro Butterworth passa-baixas e normalização Min-Max para [-1, 1].
         """
-        processed_data = np.zeros_like(data, dtype=np.float32)
+        processed_data = np.zeros_like(data)
         nyq = 0.5 * fs
         high = highcut_hz / nyq
         

@@ -79,8 +79,7 @@ def build_rhcb5_model(input_shape, num_classes):
     model.compile(
         optimizer='adam', 
         loss='sparse_categorical_crossentropy', 
-        metrics=['accuracy'],
-        jit_compile=True
+        metrics=['accuracy']
     )
     return model
 
@@ -188,19 +187,16 @@ def run_rhcb5_pipeline(run_id, base_results_dir, global_constants, random_seed_f
         if VERBOSE_LEVEL > 0:
             model.summary()
 
-        # Create tf.data datasets for optimized data loading
-        train_dataset = tf.data.Dataset.from_tensor_slices((X_train, y_train)).batch(BATCH_SIZE).prefetch(tf.data.AUTOTUNE)
-        val_dataset = tf.data.Dataset.from_tensor_slices((X_val, y_val)).batch(BATCH_SIZE).prefetch(tf.data.AUTOTUNE)
-
         callbacks = [
             EarlyStopping(monitor='val_loss', patience=PATIENCE_RHCB5, restore_best_weights=True, verbose=VERBOSE_LEVEL),
             ModelCheckpoint(MODEL_SAVE_PATH, monitor='val_loss', save_best_only=True, verbose=VERBOSE_LEVEL)
         ]
         
         history = model.fit(
-            train_dataset,
+            X_train, y_train,
             epochs=NUM_EPOCHS,
-            validation_data=val_dataset,
+            batch_size=BATCH_SIZE,
+            validation_data=(X_val, y_val),
             callbacks=callbacks,
             verbose=VERBOSE_LEVEL
         )

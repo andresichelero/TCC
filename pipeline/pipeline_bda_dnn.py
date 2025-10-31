@@ -15,7 +15,6 @@ Ele depende de 'pipeline_utils.py' para:
 import gc
 import os
 import time
-import datetime
 import json
 import sys
 import pywt
@@ -41,16 +40,13 @@ except ImportError:
 
 
 # --- Constantes Específicas do Pipeline BDA-DNN ---
-# Limites de features para a função fitness
-MIN_FEATURES = 15
-MAX_FEATURES = 28
 
 # Pré-processamento
 SWT_WAVELET = "db4"
 SWT_LEVEL = 4
 
 # Parâmetros da DNN para Treino Final
-DNN_TRAINING_PARAMS_FINAL = {"epochs": 100, "batch_size": 16, "patience": 30}
+DNN_TRAINING_PARAMS_FINAL = {"epochs": 250, "batch_size": 16, "patience": 30}
 
 # Parâmetros dos Otimizadores
 N_AGENTS_OPTIMIZERS = 10
@@ -459,12 +455,6 @@ class BinaryDragonflyAlgorithm:
                             n_to_activate = min(len(zeros), self.min_features - n_selected)
                             to_activate = np.random.choice(zeros, n_to_activate, replace=False)
                             self.positions[idx, to_activate] = 1
-                    elif n_selected > self.max_features:
-                        ones = np.where(self.positions[idx, :] == 1)[0]
-                        if len(ones) > 0:
-                            n_to_deactivate = min(len(ones), n_selected - self.max_features)
-                            to_deactivate = np.random.choice(ones, n_to_deactivate, replace=False)
-                            self.positions[idx, to_deactivate] = 0
                 mutation_boost_counter = 0
 
             if self._stagnation_counter >= self.stagnation_limit:
@@ -495,12 +485,6 @@ class BinaryDragonflyAlgorithm:
                 n_to_activate = min(len(zeros), self.min_features - n_selected_final)
                 to_activate = np.random.choice(zeros, n_to_activate, replace=False)
                 self.food_pos[to_activate] = 1
-        elif n_selected_final > self.max_features:
-            ones = np.where(self.food_pos == 1)[0]
-            if len(ones) > 0:
-                n_to_deactivate = min(len(ones), n_selected_final - self.max_features)
-                to_deactivate = np.random.choice(ones, n_to_deactivate, replace=False)
-                self.food_pos[to_deactivate] = 0
                 
         if self.verbose_optimizer_level > 0:
             print(f"\nBDA Otimização Concluída. Melhor fitness: {self.food_fitness:.4f}")
@@ -575,9 +559,6 @@ class PipelineHelpers:
             num_selected = len(selected_indices)
             total_features = len(binary_feature_vector)
             
-            if not (MIN_FEATURES <= num_selected <= MAX_FEATURES):
-                return {'fitness': 1.0, 'accuracy': 0.0, 'num_features': num_selected}
-
             X_train_selected = X_train_features[:, selected_indices]
 
             try:
@@ -638,22 +619,12 @@ class PipelineHelpers:
             restore_best_weights=True, verbose=1 if VERBOSE_OPTIMIZER_LEVEL > 0 else 0,
         )
         
-        # Create tf.data dataset for optimized training
-        from sklearn.model_selection import train_test_split
-        batch_size = dnn_params.get("batch_size", 128)
-        
-        # Split data for validation since tf.data doesn't support validation_split
-        X_train_split, X_val_split, y_train_split, y_val_split = train_test_split(
-            X_train_full_selected, y_train_full, test_size=0.15, random_state=42, stratify=y_train_full
-        )
-        
-        train_dataset = tf.data.Dataset.from_tensor_slices((X_train_split, y_train_split)).batch(batch_size).prefetch(tf.data.AUTOTUNE)
-        val_dataset = tf.data.Dataset.from_tensor_slices((X_val_split, y_val_split)).batch(batch_size).prefetch(tf.data.AUTOTUNE)
-        
         history = final_model.fit(
-            train_dataset,
+            X_train_full_selected,
+            y_train_full,
             epochs=dnn_params.get("epochs", 150),
-            validation_data=val_dataset,
+            batch_size=dnn_params.get("batch_size", 16),
+            validation_split=0.15,
             callbacks=[early_stopping_final],
             verbose=1 if VERBOSE_OPTIMIZER_LEVEL > 0 else 0,
         )
@@ -777,7 +748,7 @@ def run_bda_dnn_pipeline(run_id, base_results_dir, global_constants, random_seed
             alpha_fitness=ALPHA_FITNESS, beta_fitness=BETA_FITNESS,
             seed=random_seed_for_run,
             verbose_optimizer_level=VERBOSE_OPTIMIZER_LEVEL,
-            min_features=MIN_FEATURES, max_features=MAX_FEATURES,
+            min_features=1, max_features=None,
         )
         Sf_bda, best_fitness_bda, convergence_bda, acc_curve_bda, nfeat_curve_bda, _, pop_fitness_hist, feat_sel_hist = bda.run()
         

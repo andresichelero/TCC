@@ -27,8 +27,8 @@ from sklearn.model_selection import train_test_split
 
 # --- Importação dos Módulos de Pipeline ---
 try:
-    from pipeline_utils import Plotting, NumpyEncoder, CLASS_NAMES, DataHandler, FS, HIGHCUT_HZ, FILTER_ORDER, TEST_SIZE, VAL_SIZE
-    from pipeline_bda_dnn import run_bda_dnn_pipeline, FeatureExtractor
+    from pipeline_utils import Plotting, NumpyEncoder, CLASS_NAMES, DataHandler, FS, HIGHCUT_HZ, FILTER_ORDER
+    from pipeline_bda_dnn import run_bda_dnn_pipeline
     from pipeline_rhcb5 import run_rhcb5_pipeline
 except ImportError as e:
     print(f"ERRO: Não foi possível importar os módulos dos pipelines: {e}")
@@ -36,7 +36,7 @@ except ImportError as e:
     sys.exit(1)
 
 # --- Configurações da Comparação ---
-NUM_RUNS = 5 # Número de vezes para executar cada pipeline
+NUM_RUNS = 20 # Número de vezes para executar cada pipeline
 SAVE_PLOTS = True # Salvar plots agregados
 
 # --- Configuração de Diretórios ---
