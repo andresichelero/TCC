@@ -36,7 +36,7 @@ except ImportError as e:
     sys.exit(1)
 
 # --- Configurações da Comparação ---
-NUM_RUNS = 20 # Número de vezes para executar cada pipeline
+NUM_RUNS = 4 # Número de vezes para executar cada pipeline
 SAVE_PLOTS = True # Salvar plots agregados
 
 # --- Configuração de Diretórios ---
@@ -165,7 +165,7 @@ def run_pipeline_loop(pipeline_func, pipeline_name, run_seeds, base_results_dir,
             all_results.append({"run_id": run_id, "seed": seed, "error": str(e)})
         
         # Limpa a memória da GPU (se aplicável) após cada execução
-        tf.keras.backend.clear_session()
+        tf.keras.backend.clear_session() # pyright: ignore[reportAttributeAccessIssue]
         gc.collect()
 
     total_time_min = (time.time() - start_time_pipeline) / 60.0
@@ -262,36 +262,120 @@ def main():
         rhcb5_all_results, "RHCB5", COMPARISON_RUN_DIR
     )
 
-    # 6. Análise Estatística de Comparação (Ex: Teste T)
-    print("\n--- Análise Estatística Comparativa (Teste T) ---")
+    # 6. Análise Estatística de Comparação (Teste T Pareado com Testes de Pressupostos)
+    print("\n--- Análise Estatística Comparativa (Teste T Pareado) ---")
+    statistical_comparison_results = {}
     if (bda_df is not None) and (rhcb5_df is not None):
         try:
+            # Função auxiliar para testes de pressupostos e comparação
+            def perform_statistical_tests(metric_name, bda_values, rhcb5_values):
+                print(f"\n--- Testes para {metric_name} ---")
+                
+                results = {
+                    "metric": metric_name,
+                    "tests": {}
+                }
+                
+                # Remove NaN values
+                bda_clean = bda_values.dropna()
+                rhcb5_clean = rhcb5_values.dropna()
+                
+                if len(bda_clean) != len(rhcb5_clean):
+                    print(f"Aviso: Número diferente de valores válidos para {metric_name} (BDA: {len(bda_clean)}, RHCB5: {len(rhcb5_clean)})")
+                    min_len = min(len(bda_clean), len(rhcb5_clean))
+                    bda_clean = bda_clean[:min_len]
+                    rhcb5_clean = rhcb5_clean[:min_len]
+                
+                if len(bda_clean) < 3:
+                    print(f"Aviso: Poucos dados válidos para {metric_name}, pulando testes.")
+                    return None
+                
+                # Calcula diferenças para teste pareado
+                differences = bda_clean - rhcb5_clean
+                
+                # 1. Teste de Normalidade (Shapiro-Wilk) nas diferenças
+                shapiro_stat, shapiro_p = stats.shapiro(differences)
+                normality_assumption = shapiro_p > 0.05
+                results["tests"]["shapiro_wilk"] = {
+                    "statistic": float(shapiro_stat),
+                    "p_value": float(shapiro_p),
+                    "normal_distribution": normality_assumption
+                }
+                print(f"Teste de Shapiro-Wilk (normalidade das diferenças) | Estatística: {shapiro_stat:.4f}, p-value: {shapiro_p:.4f}")
+                if normality_assumption:
+                    print("  > Diferenças seguem distribuição normal (p > 0.05).")
+                else:
+                    print("  > Diferenças não seguem distribuição normal (p <= 0.05).")
+                
+                # 2. Teste de Wilcoxon (não-paramétrico pareado)
+                wilcoxon_result = stats.wilcoxon(bda_clean, rhcb5_clean)
+                wilcoxon_significant = wilcoxon_result.pvalue < 0.05  # type: ignore
+                results["tests"]["wilcoxon"] = {
+                    "statistic": float(wilcoxon_result.statistic),  # type: ignore
+                    "p_value": float(wilcoxon_result.pvalue),  # type: ignore
+                    "significant_difference": wilcoxon_significant
+                }
+                print(f"Teste de Wilcoxon | Estatística: {wilcoxon_result.statistic:.4f}, p-value: {wilcoxon_result.pvalue:.4f}")  # type: ignore
+                if wilcoxon_significant:
+                    print("  > Diferença estatisticamente significativa (Wilcoxon).")
+                else:
+                    print("  > Nenhuma diferença estatisticamente significativa (Wilcoxon).")
+                
+                # 3. Teste T Pareado (se pressuposto de normalidade for atendido)
+                if normality_assumption:
+                    ttest_stat, ttest_p = stats.ttest_rel(bda_clean, rhcb5_clean)
+                    ttest_significant = ttest_p < 0.05
+                    results["tests"]["paired_t_test"] = {
+                        "statistic": float(ttest_stat),
+                        "p_value": float(ttest_p),
+                        "significant_difference": ttest_significant
+                    }
+                    print(f"Teste T Pareado | Estatística: {ttest_stat:.4f}, p-value: {ttest_p:.4f}")
+                    if ttest_significant:
+                        print("  > Diferença estatisticamente significativa (Teste T Pareado).")
+                    else:
+                        print("  > Nenhuma diferença estatisticamente significativa (Teste T Pareado).")
+                else:
+                    results["tests"]["paired_t_test"] = {
+                        "not_performed": True,
+                        "reason": "Pressuposto de normalidade não atendido"
+                    }
+                    print("  > Pressuposto de normalidade não atendido, considere usar Wilcoxon em vez do Teste T.")
+                
+                return results
+            
             # Compara Acurácias
-            acc_ttest = stats.ttest_ind(
-                bda_df['accuracy'].dropna(), 
-                rhcb5_df['accuracy'].dropna(), 
-                equal_var=False # Welch's T-test
+            acc_results = perform_statistical_tests(
+                "Acurácia", 
+                bda_df['accuracy'], 
+                rhcb5_df['accuracy']
             )
-            print(f"Teste T (Acurácia) | p-value: {acc_ttest.pvalue:.4g}")
-            if acc_ttest.pvalue < 0.05:
-                print("  > Diferença estatisticamente significativa na Acurácia.")
-            else:
-                print("  > Nenhuma diferença estatisticamente significativa na Acurácia.")
-
+            if acc_results:
+                statistical_comparison_results["accuracy"] = acc_results
+            
             # Compara F1-Macro
-            f1_ttest = stats.ttest_ind(
-                bda_df['f1_macro'].dropna(), 
-                rhcb5_df['f1_macro'].dropna(), 
-                equal_var=False
+            f1_results = perform_statistical_tests(
+                "F1-Macro", 
+                bda_df['f1_macro'], 
+                rhcb5_df['f1_macro']
             )
-            print(f"Teste T (F1-Macro) | p-value: {f1_ttest.pvalue:.4g}")
-            if f1_ttest.pvalue < 0.05:
-                print("  > Diferença estatisticamente significativa no F1-Macro.")
-            else:
-                print("  > Nenhuma diferença estatisticamente significativa no F1-Macro.")
+            if f1_results:
+                statistical_comparison_results["f1_macro"] = f1_results
         
         except Exception as e:
-            print(f"Erro ao executar Teste T: {e}")
+            print(f"Erro ao executar testes estatísticos: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    # Salvar resultados dos testes estatísticos
+    if statistical_comparison_results:
+        stats_comparison_path = os.path.join(COMPARISON_RUN_DIR, "statistical_comparison_results.json")
+        try:
+            with open(stats_comparison_path, "w") as f:
+                json.dump(statistical_comparison_results, f, indent=4)
+            print(f"Resultados dos testes estatísticos salvos em: {stats_comparison_path}")
+        except Exception as e:
+            print(f"Erro ao salvar resultados dos testes estatísticos: {e}")
 
     # 7. Gerar Gráficos Comparativos Agregados
     print("\n--- Gerando Gráficos Comparativos Finais ---")
