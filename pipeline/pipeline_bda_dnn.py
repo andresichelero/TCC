@@ -670,7 +670,7 @@ class PipelineHelpers:
 
 # --- Função Principal do Pipeline ---
 
-def run_bda_dnn_pipeline(run_id, base_results_dir, global_constants, random_seed_for_run):
+def run_bda_dnn_pipeline(run_id, base_results_dir, global_constants, random_seed_for_run, X_full_feat=None, feature_names=None, raw_labels=None):
     """
     Encapsula a execução completa do pipeline BDA-DNN para uma única execução.
     
@@ -679,6 +679,8 @@ def run_bda_dnn_pipeline(run_id, base_results_dir, global_constants, random_seed
         base_results_dir (str): Diretório base para salvar os resultados desta execução.
         global_constants (dict): Dicionário de constantes globais (ex: BASE_DATA_DIR).
         random_seed_for_run (int): A seed a ser usada para esta execução específica.
+        X_full_feat (np.ndarray): Matriz de características extraídas (se fornecida, pula extração).
+        feature_names (list): Nomes das características (se fornecida).
 
     Returns:
         dict: Um dicionário contendo as métricas finais e resultados desta execução.
@@ -718,41 +720,24 @@ def run_bda_dnn_pipeline(run_id, base_results_dir, global_constants, random_seed
     }
 
     try:
-        # 2. Carregar Dados (usando DataHandler do pipeline_utils)
-        print("\n--- 1. Carregando Dados (Utils) ---")
-        BASE_DATA_DIR = global_constants["BASE_DATA_DIR"]
-        raw_data, raw_labels = DataHandler.load_bonn_data(BASE_DATA_DIR)
-        
-        # Generate data loading plots
-        Plotting.plot_sample_signals(raw_data, raw_labels, CLASS_NAMES, PLOTS_DIR, SAVE_PLOTS_PER_RUN,
-                                   title="Sample Signals - Raw Data", filename="data_sample_signals.png")
+        if X_full_feat is None or feature_names is None:
+            # Fallback: carregar e processar dados (não deveria acontecer)
+            print("\n--- 1. Carregando Dados (Utils) ---")
+            BASE_DATA_DIR = global_constants["BASE_DATA_DIR"]
+            raw_data, raw_labels = DataHandler.load_bonn_data(BASE_DATA_DIR)
+            
+            print("\n--- 2. Pré-processando Dados (Utils) ---")
+            data_processed = DataHandler.preprocess_eeg(
+                raw_data, fs=FS, highcut_hz=HIGHCUT_HZ, order=FILTER_ORDER
+            )
+            
+            print("\n--- 3. Extraindo Características SWT ---")
+            X_full_feat, feature_names = FeatureExtractor.extract_swt_features(data_processed, wavelet=SWT_WAVELET, level=SWT_LEVEL)
+        else:
+            # Usar dados pré-processados
+            pass
 
-        # 3. Pré-processar Dados (usando DataHandler do pipeline_utils)
-        print("\n--- 2. Pré-processando Dados (Utils) ---")
-        data_processed = DataHandler.preprocess_eeg(
-            raw_data, fs=FS, highcut_hz=HIGHCUT_HZ, order=FILTER_ORDER
-        )
-        
-        # Generate preprocessing plots
-        Plotting.plot_original_vs_filtered_signals(raw_data, data_processed, PLOTS_DIR, SAVE_PLOTS_PER_RUN,
-                                                 title="Original vs Filtered Signals", filename="preprocessing_comparison.png")
-        Plotting.plot_power_spectral_density(raw_data, FS, PLOTS_DIR, SAVE_PLOTS_PER_RUN,
-                                           title="Power Spectral Density - Raw Signals", filename="psd_raw.png")
-        Plotting.plot_power_spectral_density(data_processed, FS, PLOTS_DIR, SAVE_PLOTS_PER_RUN,
-                                           title="Power Spectral Density - Filtered Signals", filename="psd_filtered.png")
-
-        # 4. Extrair Características (usando FeatureExtractor)
-        print("\n--- 3. Extraindo Características SWT ---")
-        X_full_feat, feature_names = FeatureExtractor.extract_swt_features(data_processed, wavelet=SWT_WAVELET, level=SWT_LEVEL)
-        
-        # Generate feature extraction plots
-        Plotting.plot_feature_distributions(X_full_feat, feature_names, PLOTS_DIR, SAVE_PLOTS_PER_RUN,
-                                          title="SWT Feature Distributions", filename="features_distributions.png")
-        Plotting.plot_feature_correlation_matrix(X_full_feat, feature_names, PLOTS_DIR, SAVE_PLOTS_PER_RUN,
-                                                title="SWT Feature Correlation Matrix", filename="features_correlation.png")
-
-        # 5. Dividir Dados (usando DataHandler do pipeline_utils)
-        print("\n--- 4. Dividindo Dados (Utils) ---")
+        # 4. Dividir Dados (usando DataHandler do pipeline_utils)
         X_train_feat, X_val_feat, X_test_feat, y_train, y_val, y_test = (
             DataHandler.split_data(
                 X_full_feat, raw_labels,
@@ -760,7 +745,7 @@ def run_bda_dnn_pipeline(run_id, base_results_dir, global_constants, random_seed
                 random_state=random_seed_for_run
             )
         )
-        del X_full_feat, raw_labels # Libera memória
+        del X_full_feat # Libera memória
         gc.collect()
 
         DIM_FEATURES = X_train_feat.shape[1]

@@ -36,7 +36,7 @@ except ImportError as e:
     sys.exit(1)
 
 # --- Configurações da Comparação ---
-NUM_RUNS = 50 # Número de vezes para executar cada pipeline
+NUM_RUNS = 5 # Número de vezes para executar cada pipeline
 SAVE_PLOTS = True # Salvar plots agregados
 
 # --- Configuração de Diretórios ---
@@ -133,10 +133,10 @@ def compile_and_save_statistics(results_list, pipeline_name, output_dir):
     
     return df, stats_df
 
-def run_pipeline_loop(pipeline_func, pipeline_name, run_seeds, base_results_dir):
+def run_pipeline_loop(pipeline_func, pipeline_name, run_seeds, base_results_dir, **data_kwargs):
     """Função auxiliar para executar o loop de 50 execuções."""
     all_results = []
-    pipeline_run_dir = os.path.join(COMPARISON_RUN_DIR, f"{pipeline_name}_runs")
+    pipeline_run_dir = os.path.join(base_results_dir, f"{pipeline_name}_runs")
     os.makedirs(pipeline_run_dir, exist_ok=True)
     
     start_time_pipeline = time.time()
@@ -154,7 +154,8 @@ def run_pipeline_loop(pipeline_func, pipeline_name, run_seeds, base_results_dir)
                 run_id=run_id,
                 base_results_dir=pipeline_run_dir,
                 global_constants=GLOBAL_CONSTANTS,
-                random_seed_for_run=seed
+                random_seed_for_run=seed,
+                **data_kwargs
             )
             all_results.append(result)
         except Exception as e:
@@ -207,20 +208,36 @@ def main():
         print("Certifique-se que o diretório de dados está correto e os arquivos necessários estão presentes.")
         sys.exit(1)
 
-    # 3. Executar BDA-DNN
+    # 3. Pré-processar dados uma vez
+    print("\n--- 2. Pré-processando Dados (Utils) ---")
+    data_processed = DataHandler.preprocess_eeg(
+        raw_data, fs=FS, highcut_hz=HIGHCUT_HZ, order=FILTER_ORDER
+    )
+
+    # 4. Extrair características SWT uma vez (para BDA-DNN)
+    print("\n--- 3. Extraindo Características SWT ---")
+    from pipeline_bda_dnn import FeatureExtractor
+    X_full_feat, feature_names = FeatureExtractor.extract_swt_features(data_processed, wavelet='db4', level=4)
+
+    # 5. Executar BDA-DNN
     bda_all_results = run_pipeline_loop(
         pipeline_func=run_bda_dnn_pipeline,
         pipeline_name="BDA_DNN",
         run_seeds=run_seeds,
-        base_results_dir=COMPARISON_RUN_DIR
+        base_results_dir=COMPARISON_RUN_DIR,
+        X_full_feat=X_full_feat,
+        feature_names=feature_names,
+        raw_labels=raw_labels
     )
 
-    # 4. Executar RHCB5
+    # 6. Executar RHCB5
     rhcb5_all_results = run_pipeline_loop(
         pipeline_func=run_rhcb5_pipeline,
         pipeline_name="RHCB5",
         run_seeds=run_seeds,
-        base_results_dir=COMPARISON_RUN_DIR
+        base_results_dir=COMPARISON_RUN_DIR,
+        data_processed=data_processed,
+        raw_labels=raw_labels
     )
 
     # 4. Salvar resultados brutos

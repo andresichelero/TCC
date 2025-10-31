@@ -85,7 +85,7 @@ def build_rhcb5_model(input_shape, num_classes):
 
 # --- Função Principal do Pipeline ---
 
-def run_rhcb5_pipeline(run_id, base_results_dir, global_constants, random_seed_for_run):
+def run_rhcb5_pipeline(run_id, base_results_dir, global_constants, random_seed_for_run, data_processed=None, raw_labels=None):
     """
     Encapsula a execução completa do pipeline RHCB5 para uma única execução.
     
@@ -94,6 +94,8 @@ def run_rhcb5_pipeline(run_id, base_results_dir, global_constants, random_seed_f
         base_results_dir (str): Diretório base para salvar os resultados desta execução.
         global_constants (dict): Dicionário de constantes globais (ex: BASE_DATA_DIR).
         random_seed_for_run (int): A seed a ser usada para esta execução específica.
+        data_processed (np.ndarray): Dados pré-processados (se fornecida, pula carregamento e pré-processamento).
+        raw_labels (np.ndarray): Labels dos dados (se fornecida).
 
     Returns:
         dict: Um dicionário contendo as métricas finais e resultados desta execução.
@@ -134,38 +136,36 @@ def run_rhcb5_pipeline(run_id, base_results_dir, global_constants, random_seed_f
     }
 
     try:
-        # 2. Carregar Dados (usando DataHandler do pipeline_utils)
-        print("\n--- 1. Carregando Dados (Utils) ---")
-        BASE_DATA_DIR = global_constants["BASE_DATA_DIR"]
-        raw_data, raw_labels = DataHandler.load_bonn_data(BASE_DATA_DIR)
-        
-        # Generate data loading plots
-        Plotting.plot_sample_signals(raw_data, raw_labels, CLASS_NAMES, PLOTS_DIR, SAVE_PLOTS_PER_RUN,
-                                   title="Sample Signals - Raw Data", filename="data_sample_signals.png")
-
-        # 3. Pré-processar Dados (usando DataHandler do pipeline_utils)
-        print("\n--- 2. Pré-processando Dados (Utils) ---")
-        data_processed = DataHandler.preprocess_eeg(
-            raw_data, fs=FS, highcut_hz=HIGHCUT_HZ, order=FILTER_ORDER
-        )
-        
-        # Generate preprocessing plots
-        Plotting.plot_original_vs_filtered_signals(raw_data, data_processed, PLOTS_DIR, SAVE_PLOTS_PER_RUN,
-                                                 title="Original vs Filtered Signals", filename="preprocessing_comparison.png")
-        Plotting.plot_power_spectral_density(raw_data, FS, PLOTS_DIR, SAVE_PLOTS_PER_RUN,
-                                           title="Power Spectral Density - Raw Signals", filename="psd_raw.png")
-        Plotting.plot_power_spectral_density(data_processed, FS, PLOTS_DIR, SAVE_PLOTS_PER_RUN,
-                                           title="Power Spectral Density - Filtered Signals", filename="psd_filtered.png")
+        if data_processed is None or raw_labels is None:
+            # Fallback: carregar e processar dados
+            print("\n--- 1. Carregando Dados (Utils) ---")
+            BASE_DATA_DIR = global_constants["BASE_DATA_DIR"]
+            raw_data, raw_labels = DataHandler.load_bonn_data(BASE_DATA_DIR)
+            
+            print("\n--- 2. Pré-processando Dados (Utils) ---")
+            data_processed = DataHandler.preprocess_eeg(
+                raw_data, fs=FS, highcut_hz=HIGHCUT_HZ, order=FILTER_ORDER
+            )
+            
+            # Generate preprocessing plots
+            Plotting.plot_original_vs_filtered_signals(raw_data, data_processed, PLOTS_DIR, SAVE_PLOTS_PER_RUN,
+                                                     title="Original vs Filtered Signals", filename="preprocessing_comparison.png")
+            Plotting.plot_power_spectral_density(raw_data, FS, PLOTS_DIR, SAVE_PLOTS_PER_RUN,
+                                               title="Power Spectral Density - Raw Signals", filename="psd_raw.png")
+            Plotting.plot_power_spectral_density(data_processed, FS, PLOTS_DIR, SAVE_PLOTS_PER_RUN,
+                                               title="Power Spectral Density - Filtered Signals", filename="psd_filtered.png")
+        else:
+            # Usar dados pré-processados
+            pass
         
         # RHCB5 espera entrada (N, 4096, 1)
         X = np.expand_dims(data_processed, axis=-1).astype(np.float32)
         y = raw_labels.astype(np.int32)
         
-        del raw_data, data_processed, raw_labels # Libera memória
+        del data_processed # Libera memória
         gc.collect()
 
         # 4. Dividir Dados (usando DataHandler do pipeline_utils)
-        print("\n--- 3. Dividindo Dados (Utils) ---")
         X_train, X_val, X_test, y_train, y_val, y_test = (
             DataHandler.split_data(
                 X, y,
