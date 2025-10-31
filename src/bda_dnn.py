@@ -24,8 +24,8 @@ MAX_FEATURES = 28
 
 # Diretórios
 current_dir = os.path.dirname(os.path.abspath(__file__))
-BASE_DATA_DIR = os.path.join(current_dir, "data")
-BASE_RESULTS_DIR = os.path.join(current_dir, "results")
+BASE_DATA_DIR = os.path.join(os.path.dirname(current_dir), "data")
+BASE_RESULTS_DIR = os.path.join(os.path.dirname(current_dir), "results")
 run_timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 RUN_RESULTS_DIR = os.path.join(BASE_RESULTS_DIR, f"run_{run_timestamp}")
 PLOTS_DIR_MAIN = os.path.join(RUN_RESULTS_DIR, "plots")
@@ -59,7 +59,7 @@ TEST_SIZE = 0.20 # Proporção do conjunto de teste
 VAL_SIZE = 0.15 # Proporção do conjunto de validação
 
 # Parâmetros da DNN para Treino Final
-DNN_TRAINING_PARAMS_FINAL = {"epochs": 250, "batch_size": 16, "patience": 30}
+DNN_TRAINING_PARAMS_FINAL = {"epochs": 100, "batch_size": 16, "patience": 30}
 
 # Parâmetros dos Otimizadores
 N_AGENTS_OPTIMIZERS = 10 # Número de agentes (vaga-lumes)
@@ -1859,64 +1859,41 @@ if __name__ == "__main__":
     Plotting.plot_feature_count_distribution(all_candidate_solutions, plots_dir=PLOTS_DIR, save_plots=SAVE_PLOTS, filename="feature_count_distribution.png")
 
     # --- 7. Treinamento e Avaliação Final da DNN ---
-    print("\n\n--- 7. Treinamento e Avaliação Final dos Modelos DNN ---")
+    print("\n\n--- 7. Treinamento e Avaliação Final da DNN ---")
     # Combina treino e validação para o treino final da DNN (conforme artigo)
     X_train_full_feat_final = np.concatenate((X_train_feat_opt, X_val_feat_combine), axis=0)
     y_train_full_labels_final = np.concatenate((y_train_labels, y_val_labels), axis=0)
     print(f"Usando {X_train_full_feat_final.shape[0]} amostras para o treinamento final da DNN.")
 
-    for algo_name, candidate_solutions in all_candidate_solutions.items():
-        print(f"\n--- Processando Candidatos de {algo_name} ---")
-        
-        filtered_candidates = candidate_solutions
-        if ENABLE_FEATURE_COUNT_FILTER:
-            print(f"Filtrando candidatos de {algo_name} para {TARGET_FEATURE_COUNT} features...")
-            filtered_candidates = [(f, s) for f, s in candidate_solutions if np.sum(s) == TARGET_FEATURE_COUNT]
-            print(f"Encontrados {len(filtered_candidates)} candidatos com o número de features alvo.")
+    # Usar apenas a melhor solução do BDA
+    if "BDA" in all_candidate_solutions and all_candidate_solutions["BDA"]:
+        best_fitness, best_solution = all_candidate_solutions["BDA"][0]
+        num_features = np.sum(best_solution)
+        model_name = f"BDA-F{num_features}"
 
-        if not filtered_candidates:
-            print(f"Nenhum candidato de {algo_name} sobrou após a filtragem.")
-            continue
+        print(f"\n>>> Treinando modelo com a melhor solução do BDA (Fitness: {best_fitness:.4f}, Features: {num_features})...")
 
-        # Loop de Treinamento com Limiar de Qualidade
-        final_good_model_count = 0
-        candidate_idx = 0
-        
-        while final_good_model_count < MAX_FINAL_MODELS_TO_KEEP and candidate_idx < len(filtered_candidates):
-            fitness_score, solution_vector = filtered_candidates[candidate_idx]
-            num_features = np.sum(solution_vector)
-            model_rank = candidate_idx + 1 
-            model_name = f"{algo_name}-F{num_features}-Rank{model_rank}" # Ex: BDA-F19-Rank1
+        metrics, history_data = PipelineHelpers.train_and_evaluate_final_model(
+            model_name=model_name,
+            selected_features_vector=best_solution,
+            X_train_full_all_feat=X_train_full_feat_final,
+            y_train_full=y_train_full_labels_final,
+            X_test_all_feat=X_test_feat_final,
+            y_test=y_test_labels,
+            dnn_params=DNN_TRAINING_PARAMS_FINAL,
+            class_names=class_names,
+            opt_fitness_score=best_fitness,
+            plots_dir=PLOTS_DIR,
+            save_plots=SAVE_PLOTS
+        )
 
-            print(f"\n>>> Treinando modelo {final_good_model_count + 1}/{MAX_FINAL_MODELS_TO_KEEP} (Candidato Rank {model_rank} de {algo_name})...")
-            
-            metrics, history_data = PipelineHelpers.train_and_evaluate_final_model(
-                model_name=model_name,
-                selected_features_vector=solution_vector,
-                X_train_full_all_feat=X_train_full_feat_final,
-                y_train_full=y_train_full_labels_final,
-                X_test_all_feat=X_test_feat_final,
-                y_test=y_test_labels,
-                dnn_params=DNN_TRAINING_PARAMS_FINAL,
-                class_names=class_names,
-                opt_fitness_score=fitness_score,
-                plots_dir=PLOTS_DIR,
-                save_plots=SAVE_PLOTS
-            )
-            
-            candidate_idx += 1 # Avança para o próximo candidato
-
-            if metrics and metrics.get("accuracy", 0) >= FINAL_MODEL_ACCURACY_THRESHOLD:
-                print(f"+++ SUCESSO: Modelo {model_name} atingiu {metrics['accuracy']:.2%} de acurácia. Mantendo.")
-                final_good_model_count += 1
-                all_results[f"{model_name}_final_eval"] = metrics
-            elif metrics:
-                print(f"--- DESCARTADO: Modelo {model_name} com acurácia de {metrics['accuracy']:.2%}, abaixo do limiar de {FINAL_MODEL_ACCURACY_THRESHOLD:.0%}.")
-            else:
-                print(f"### FALHA: Treinamento para {model_name} não produziu métricas. Descartando.")
-
-        if final_good_model_count < MAX_FINAL_MODELS_TO_KEEP:
-            print(f"\nAVISO: Não foi possível encontrar {MAX_FINAL_MODELS_TO_KEEP} modelos para {algo_name} que satisfizessem o limiar. Encontrados: {final_good_model_count}.")
+        if metrics:
+            all_results[f"{model_name}_final_eval"] = metrics
+            print(f"Modelo {model_name} treinado com sucesso. Acurácia: {metrics['accuracy']:.2%}")
+        else:
+            print(f"Falha no treinamento do modelo {model_name}.")
+    else:
+        print("Nenhuma solução candidata encontrada para treinar o modelo final.")
 
     # --- 8. Salvar Resultados Consolidados ---
     results_file_path = os.path.join(RUN_RESULTS_DIR, "all_pipeline_results.json")
@@ -1972,7 +1949,7 @@ if __name__ == "__main__":
     print("\n\n--- Gerando Gráficos Comparativos Finais ---")
     final_eval_results_for_plot = {k.replace('_final_eval', ''): v for k, v in all_results.items() if k.endswith('_final_eval')}
 
-    if final_eval_results_for_plot:
+    if final_eval_results_for_plot and len(final_eval_results_for_plot) > 1:
         Plotting.plot_final_metrics_comparison_bars(
             final_eval_results_for_plot,
             class_labels=class_names,
@@ -1981,7 +1958,7 @@ if __name__ == "__main__":
             base_filename="final_model_metrics",
         )
     else:
-        print("Nenhum resultado de avaliação final para plotar.")
+        print("Apenas um modelo avaliado. Gráfico comparativo não gerado.")
 
     total_execution_time = time.time() - start_time_total
     print(f"\nTempo total de execução da pipeline: {total_execution_time/60:.2f} minutos")
