@@ -639,13 +639,21 @@ class PipelineHelpers:
         )
         
         # Create tf.data dataset for optimized training
+        from sklearn.model_selection import train_test_split
         batch_size = dnn_params.get("batch_size", 128)
-        train_dataset = tf.data.Dataset.from_tensor_slices((X_train_full_selected, y_train_full)).batch(batch_size).prefetch(tf.data.AUTOTUNE)
+        
+        # Split data for validation since tf.data doesn't support validation_split
+        X_train_split, X_val_split, y_train_split, y_val_split = train_test_split(
+            X_train_full_selected, y_train_full, test_size=0.15, random_state=42, stratify=y_train_full
+        )
+        
+        train_dataset = tf.data.Dataset.from_tensor_slices((X_train_split, y_train_split)).batch(batch_size).prefetch(tf.data.AUTOTUNE)
+        val_dataset = tf.data.Dataset.from_tensor_slices((X_val_split, y_val_split)).batch(batch_size).prefetch(tf.data.AUTOTUNE)
         
         history = final_model.fit(
             train_dataset,
             epochs=dnn_params.get("epochs", 150),
-            validation_split=0.15,
+            validation_data=val_dataset,
             callbacks=[early_stopping_final],
             verbose=1 if VERBOSE_OPTIMIZER_LEVEL > 0 else 0,
         )
