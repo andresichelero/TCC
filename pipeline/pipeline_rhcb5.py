@@ -46,7 +46,7 @@ BATCH_SIZE = 32
 PATIENCE_RHCB5 = 15 # Paciência do EarlyStopping
 
 # Nível de verbosidade
-VERBOSE_LEVEL = 0 # 0 = silencioso, 1 = progresso
+VERBOSE_LEVEL = 1 # 0 = silencioso, 1 = progresso
 SAVE_PLOTS_PER_RUN = True # Enable plots for individual runs
 
 # --- Classes de Lógica Específicas do RHCB5 ---
@@ -140,10 +140,6 @@ def run_rhcb5_pipeline(run_id, base_results_dir, global_constants, random_seed_f
         raw_data, raw_labels = DataHandler.load_bonn_data(BASE_DATA_DIR)
         
         # Generate data loading plots
-        Plotting.plot_class_distribution(raw_labels, CLASS_NAMES, PLOTS_DIR, SAVE_PLOTS_PER_RUN,
-                                       title="Class Distribution - Raw Data", filename="data_class_distribution.png")
-        Plotting.plot_signal_histograms_per_class(raw_data, raw_labels, CLASS_NAMES, PLOTS_DIR, SAVE_PLOTS_PER_RUN,
-                                                title="Signal Histograms per Class - Raw Data", filename="data_signal_histograms.png")
         Plotting.plot_sample_signals(raw_data, raw_labels, CLASS_NAMES, PLOTS_DIR, SAVE_PLOTS_PER_RUN,
                                    title="Sample Signals - Raw Data", filename="data_sample_signals.png")
 

@@ -23,7 +23,6 @@ import numpy as np
 import tensorflow as tf
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.model_selection import StratifiedKFold, cross_val_score
-from sklearn.preprocessing import StandardScaler
 from scipy.stats import skew, kurtosis
 from tqdm import tqdm
 
@@ -620,10 +619,9 @@ class PipelineHelpers:
 
         print(f"{model_name}: Selecionou {num_selected} características.")
         
-        # Normalização StandardScaler *APÓS* a seleção de features
-        scaler = StandardScaler()
-        X_train_full_selected = scaler.fit_transform(X_train_full_all_feat[:, selected_indices])
-        X_test_selected = scaler.transform(X_test_all_feat[:, selected_indices])
+        # Seleção de features
+        X_train_full_selected = X_train_full_all_feat[:, selected_indices]
+        X_test_selected = X_test_all_feat[:, selected_indices]
         
         tf.keras.backend.clear_session()
         final_model = ModelBuilder.build_dnn_model(
@@ -666,7 +664,7 @@ class PipelineHelpers:
         metrics["selected_feature_indices"] = selected_indices.tolist()
         metrics["fitness_score_from_optimizer"] = opt_fitness_score
 
-        del final_model, scaler
+        del final_model
         gc.collect()
         return metrics, history_data
 
@@ -726,10 +724,6 @@ def run_bda_dnn_pipeline(run_id, base_results_dir, global_constants, random_seed
         raw_data, raw_labels = DataHandler.load_bonn_data(BASE_DATA_DIR)
         
         # Generate data loading plots
-        Plotting.plot_class_distribution(raw_labels, CLASS_NAMES, PLOTS_DIR, SAVE_PLOTS_PER_RUN,
-                                       title="Class Distribution - Raw Data", filename="data_class_distribution.png")
-        Plotting.plot_signal_histograms_per_class(raw_data, raw_labels, CLASS_NAMES, PLOTS_DIR, SAVE_PLOTS_PER_RUN,
-                                                title="Signal Histograms per Class - Raw Data", filename="data_signal_histograms.png")
         Plotting.plot_sample_signals(raw_data, raw_labels, CLASS_NAMES, PLOTS_DIR, SAVE_PLOTS_PER_RUN,
                                    title="Sample Signals - Raw Data", filename="data_sample_signals.png")
 
@@ -806,11 +800,6 @@ def run_bda_dnn_pipeline(run_id, base_results_dir, global_constants, random_seed
                 bda_diagnostic_curves, PLOTS_DIR, SAVE_PLOTS_PER_RUN,
                 title=f"Diagnóstico BDA - Run {run_id}",
                 filename="bda_diagnostics.png",
-            )
-            Plotting.plot_bda_population_fitness(
-                pop_fitness_hist, PLOTS_DIR, SAVE_PLOTS_PER_RUN,
-                title=f"Evolução Fitness População BDA - Run {run_id}",
-                filename="bda_population_fitness.png",
             )
             Plotting.plot_feature_selection_heatmap(
                 feat_sel_hist, feature_names, PLOTS_DIR, SAVE_PLOTS_PER_RUN,

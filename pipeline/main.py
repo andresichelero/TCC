@@ -36,7 +36,7 @@ except ImportError as e:
     sys.exit(1)
 
 # --- Configurações da Comparação ---
-NUM_RUNS = 2 # Número de vezes para executar cada pipeline
+NUM_RUNS = 50 # Número de vezes para executar cada pipeline
 SAVE_PLOTS = True # Salvar plots agregados
 
 # --- Configuração de Diretórios ---
@@ -44,17 +44,6 @@ SAVE_PLOTS = True # Salvar plots agregados
 current_dir = os.path.dirname(os.path.abspath(__file__))
 BASE_DATA_DIR = os.path.join(current_dir, "..", "data")
 BASE_RESULTS_DIR = os.path.join(current_dir, "results")
-
-# Cria um diretório único para esta comparação
-run_timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-COMPARISON_RUN_DIR = os.path.join(BASE_RESULTS_DIR, f"comparison_run_{run_timestamp}")
-COMPARISON_PLOTS_DIR = os.path.join(COMPARISON_RUN_DIR, "plots")
-os.makedirs(COMPARISON_PLOTS_DIR, exist_ok=True)
-
-print(f"Iniciando Comparação de Pipelines (BDA-DNN vs RHCB5)")
-print(f"Número de Execuções por Pipeline: {NUM_RUNS}")
-print(f"Diretório de Resultados da Comparação: {COMPARISON_RUN_DIR}")
-print(f"Diretório de Dados: {BASE_DATA_DIR}")
 
 # Passa as constantes globais para as funções do pipeline
 GLOBAL_CONSTANTS = {
@@ -67,14 +56,18 @@ def compile_and_save_statistics(results_list, pipeline_name, output_dir):
     """
     Compila uma lista de dicionários de resultados em um DataFrame
     e calcula estatísticas robustas.
+
+    Algumas colunas do DataFrame são específicas de cada pipeline e podem conter valores NaN para outros pipelines.
+    Por exemplo, 'num_features', 'bda_fitness', e 'bda_time_sec' são relevantes apenas para o pipeline BDA-DNN e serão NaN para RHCB5.
     """
     print(f"\n--- Compilando Estatísticas para {pipeline_name} ---")
     
     # Extrai os dados relevantes
     data_for_df = []
     for run_res in results_list:
-        if not run_res or "final_metrics" not in run_res:
-            print(f"Aviso: Run {run_res.get('run_id')} de {pipeline_name} falhou ou está incompleta. Descartando.")
+        if not isinstance(run_res, dict) or "final_metrics" not in run_res:
+            run_id = run_res.get('run_id') if isinstance(run_res, dict) else None
+            print(f"Aviso: Run {run_id} de {pipeline_name} falhou ou está incompleta. Descartando.")
             continue
             
         metrics = run_res["final_metrics"]
@@ -184,6 +177,17 @@ def run_pipeline_loop(pipeline_func, pipeline_name, run_seeds, base_results_dir)
 
 # --- Script Principal ---
 def main():
+    # Cria um diretório único para esta comparação
+    run_timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    COMPARISON_RUN_DIR = os.path.join(BASE_RESULTS_DIR, f"comparison_run_{run_timestamp}")
+    COMPARISON_PLOTS_DIR = os.path.join(COMPARISON_RUN_DIR, "plots")
+    os.makedirs(COMPARISON_PLOTS_DIR, exist_ok=True)
+
+    print(f"Iniciando Comparação de Pipelines (BDA-DNN vs RHCB5)")
+    print(f"Número de Execuções por Pipeline: {NUM_RUNS}")
+    print(f"Diretório de Resultados da Comparação: {COMPARISON_RUN_DIR}")
+    print(f"Diretório de Dados: {BASE_DATA_DIR}")
+
     start_time_main = time.time()
 
     # 1. Gerar Seeds
@@ -196,7 +200,12 @@ def main():
 
     # 2. Carregar dados uma vez (para estatísticas)
     print("Carregando dados uma vez...")
-    raw_data, raw_labels = DataHandler.load_bonn_data(BASE_DATA_DIR)
+    try:
+        raw_data, raw_labels = DataHandler.load_bonn_data(BASE_DATA_DIR)
+    except Exception as e:
+        print(f"ERRO ao carregar os dados: {e}")
+        print("Certifique-se que o diretório de dados está correto e os arquivos necessários estão presentes.")
+        sys.exit(1)
 
     # 3. Executar BDA-DNN
     bda_all_results = run_pipeline_loop(

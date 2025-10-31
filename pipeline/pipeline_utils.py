@@ -749,3 +749,49 @@ class Plotting:
             
             filename = f"{filename_prefix}_{run_id}.png"
             Plotting._handle_plot(fig, filename, plots_dir, save_plots, f"CM {pipeline_name} Run {run_id}")
+
+    @staticmethod
+    def plot_aggregated_confusion_matrix(results_list, pipeline_name, class_names, plots_dir, save_plots):
+        """
+        Soma as matrizes de confusão de todas as execuções e plota 
+        uma matriz normalizada (por linha - "recall").
+        """
+        print(f"Gerando Matriz de Confusão Agregada para {pipeline_name}...")
+        
+        # Inicializa a matriz de confusão agregada
+        aggregated_cm = np.zeros((NUM_CLASSES, NUM_CLASSES), dtype=int)
+        
+        for run_result in results_list:
+            if run_result and 'final_metrics' in run_result:
+                cm = run_result['final_metrics'].get('confusion_matrix')
+                if cm:
+                    aggregated_cm += np.array(cm)
+        
+        if np.sum(aggregated_cm) == 0:
+            print(f"Nenhuma matriz de confusão encontrada para {pipeline_name}.")
+            return
+            
+        # Normaliza pelo total de amostras verdadeiras (por linha)
+        row_sums = aggregated_cm.sum(axis=1)[:, np.newaxis]
+        # Evita divisão por zero se uma classe nunca apareceu nos dados
+        with np.errstate(divide='ignore', invalid='ignore'):
+            normalized_cm = aggregated_cm.astype('float') / row_sums
+            normalized_cm = np.nan_to_num(normalized_cm) # Substitui nan por 0
+
+        # Cria anotações com a porcentagem e o total
+        annotations = np.empty_like(normalized_cm, dtype=object)
+        for i in range(NUM_CLASSES):
+            for j in range(NUM_CLASSES):
+                annotations[i, j] = f"{normalized_cm[i, j]:.2%}\n(n={aggregated_cm[i, j]})"
+        
+        # Plota o heatmap
+        fig = plt.figure(figsize=(12, 10))
+        sns.heatmap(normalized_cm, annot=annotations, fmt='', cmap='Blues',
+                    xticklabels=class_names, yticklabels=class_names,
+                    annot_kws={"size": 12}, vmin=0.0, vmax=1.0)
+        plt.title(f'Matriz de Confusão Agregada (Normalizada por Linha) - {pipeline_name}', fontsize=18)
+        plt.ylabel('Classe Verdadeira', fontsize=14)
+        plt.xlabel('Classe Predita', fontsize=14)
+        
+        filename = f"comparison_aggregated_cm_{pipeline_name}.png"
+        Plotting._handle_plot(fig, filename, plots_dir, save_plots, f"CM Agregada - {pipeline_name}")
