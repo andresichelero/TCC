@@ -409,7 +409,7 @@ class Plotting:
         if len(general_metrics) == 1: axs_gen = [axs_gen]
         
         for ax, metric in zip(axs_gen, general_metrics):
-            sns.boxplot(x='Pipeline', y=metric, data=df_plot, ax=ax, palette="Set2")
+            sns.boxplot(x='Pipeline', y=metric, data=df_plot, ax=ax, hue='Pipeline', palette="Set2", legend=False)
             sns.stripplot(x='Pipeline', y=metric, data=df_plot, ax=ax, color=".25", alpha=0.6)
             ax.set_title(f'Distribuição - {metric.replace("_", " ").title()}')
             ax.set_ylabel(metric.split("_")[0].title())
@@ -422,7 +422,7 @@ class Plotting:
         df_bda = df_plot[df_plot['Pipeline'] == 'BDA_DNN']
         if not df_bda['num_selected_features'].isnull().all():
             fig_feat, ax_feat = plt.subplots(figsize=(8, 7))
-            sns.boxplot(x='Pipeline', y='num_selected_features', data=df_bda, ax=ax_feat, palette="Set2")
+            sns.boxplot(x='Pipeline', y='num_selected_features', data=df_bda, ax=ax_feat, hue='Pipeline', palette="Set2", legend=False)
             sns.stripplot(x='Pipeline', y='num_selected_features', data=df_bda, ax=ax_feat, color=".25", alpha=0.6)
             ax_feat.set_title('Distribuição - Nº de Features Selecionadas (BDA-DNN)')
             ax_feat.set_ylabel('Número de Features')
@@ -434,7 +434,7 @@ class Plotting:
         if NUM_CLASSES == 1: axs_rec = [axs_rec]
         for i, ax in enumerate(axs_rec):
             metric = f'recall_{i}'
-            sns.boxplot(x='Pipeline', y=metric, data=df_plot, ax=ax, palette="Set2")
+            sns.boxplot(x='Pipeline', y=metric, data=df_plot, ax=ax, hue='Pipeline', palette="Set2", legend=False)
             sns.stripplot(x='Pipeline', y=metric, data=df_plot, ax=ax, color=".25", alpha=0.6)
             ax.set_title(f'Recall (Sensibilidade) - {class_names[i]}')
             ax.set_ylabel('Recall')
@@ -447,7 +447,7 @@ class Plotting:
         if NUM_CLASSES == 1: axs_spec = [axs_spec]
         for i, ax in enumerate(axs_spec):
             metric = f'specificity_{i}'
-            sns.boxplot(x='Pipeline', y=metric, data=df_plot, ax=ax, palette="Set2")
+            sns.boxplot(x='Pipeline', y=metric, data=df_plot, ax=ax, hue='Pipeline', palette="Set2", legend=False)
             sns.stripplot(x='Pipeline', y=metric, data=df_plot, ax=ax, color=".25", alpha=0.6)
             ax.set_title(f'Especificidade - {class_names[i]}')
             ax.set_ylabel('Especificidade')

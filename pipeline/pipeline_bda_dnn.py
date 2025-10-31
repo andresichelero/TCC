@@ -637,11 +637,14 @@ class PipelineHelpers:
             monitor="val_loss", patience=dnn_params.get("patience", 30),
             restore_best_weights=True, verbose=1 if VERBOSE_OPTIMIZER_LEVEL > 0 else 0,
         )
+        
+        # Create tf.data dataset for optimized training
+        batch_size = dnn_params.get("batch_size", 128)
+        train_dataset = tf.data.Dataset.from_tensor_slices((X_train_full_selected, y_train_full)).batch(batch_size).prefetch(tf.data.AUTOTUNE)
+        
         history = final_model.fit(
-            X_train_full_selected,
-            y_train_full,
+            train_dataset,
             epochs=dnn_params.get("epochs", 150),
-            batch_size=dnn_params.get("batch_size", 128),
             validation_split=0.15,
             callbacks=[early_stopping_final],
             verbose=1 if VERBOSE_OPTIMIZER_LEVEL > 0 else 0,

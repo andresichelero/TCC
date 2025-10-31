@@ -79,7 +79,8 @@ def build_rhcb5_model(input_shape, num_classes):
     model.compile(
         optimizer='adam', 
         loss='sparse_categorical_crossentropy', 
-        metrics=['accuracy']
+        metrics=['accuracy'],
+        jit_compile=True
     )
     return model
 
@@ -105,7 +106,7 @@ def run_rhcb5_pipeline(run_id, base_results_dir, global_constants, random_seed_f
     # 1. Configurar diretórios e seeds para esta execução
     RUN_RESULTS_DIR = os.path.join(base_results_dir, f"run_{run_id:02d}_seed_{random_seed_for_run}")
     PLOTS_DIR = os.path.join(RUN_RESULTS_DIR, "plots")
-    MODEL_SAVE_PATH = os.path.join(RUN_RESULTS_DIR, 'best_rhcb5_model.h5')
+    MODEL_SAVE_PATH = os.path.join(RUN_RESULTS_DIR, 'best_rhcb5_model.keras')
     os.makedirs(PLOTS_DIR, exist_ok=True)
     
     # Define as seeds para esta execução
@@ -187,16 +188,19 @@ def run_rhcb5_pipeline(run_id, base_results_dir, global_constants, random_seed_f
         if VERBOSE_LEVEL > 0:
             model.summary()
 
+        # Create tf.data datasets for optimized data loading
+        train_dataset = tf.data.Dataset.from_tensor_slices((X_train, y_train)).batch(BATCH_SIZE).prefetch(tf.data.AUTOTUNE)
+        val_dataset = tf.data.Dataset.from_tensor_slices((X_val, y_val)).batch(BATCH_SIZE).prefetch(tf.data.AUTOTUNE)
+
         callbacks = [
             EarlyStopping(monitor='val_loss', patience=PATIENCE_RHCB5, restore_best_weights=True, verbose=VERBOSE_LEVEL),
             ModelCheckpoint(MODEL_SAVE_PATH, monitor='val_loss', save_best_only=True, verbose=VERBOSE_LEVEL)
         ]
         
         history = model.fit(
-            X_train, y_train,
+            train_dataset,
             epochs=NUM_EPOCHS,
-            batch_size=BATCH_SIZE,
-            validation_data=(X_val, y_val),
+            validation_data=val_dataset,
             callbacks=callbacks,
             verbose=VERBOSE_LEVEL
         )
@@ -218,8 +222,8 @@ def run_rhcb5_pipeline(run_id, base_results_dir, global_constants, random_seed_f
         print("\n--- 5. Avaliação Final no Conjunto de Teste ---")
         # Carrega o melhor modelo salvo
         try:
-            model.load_weights(MODEL_SAVE_PATH)
-            print("Melhor modelo (best_rhcb5_model.h5) carregado para avaliação.")
+            model = tf.keras.models.load_model(MODEL_SAVE_PATH)
+            print("Melhor modelo (best_rhcb5_model.keras) carregado para avaliação.")
         except Exception as e:
             print(f"Aviso: Não foi possível carregar o modelo salvo. Usando o modelo final em memória. Erro: {e}")
 
