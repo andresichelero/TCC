@@ -700,6 +700,9 @@ def run_bda_dnn_pipeline(run_id, base_results_dir, global_constants, random_seed
         "seed": random_seed_for_run,
         "pipeline_name": "BDA_DNN"
     }
+    
+    if feature_names is not None:
+        run_results["feature_names"] = feature_names
 
     try:
         if X_full_feat is None or feature_names is None:
@@ -754,8 +757,8 @@ def run_bda_dnn_pipeline(run_id, base_results_dir, global_constants, random_seed
         
         run_results["bda_optimization_time_sec"] = time.time() - start_time_bda_opt
         run_results["bda_best_fitness"] = best_fitness_bda
-        run_results["bda_selected_features_vector"] = Sf_bda
-        run_results["bda_num_selected_features"] = int(np.sum(Sf_bda))
+        run_results["selected_features_vector"] = Sf_bda
+        run_results["num_selected_features"] = int(np.sum(Sf_bda))
 
         if SAVE_PLOTS_PER_RUN:
             bda_diagnostic_curves = {
@@ -786,7 +789,7 @@ def run_bda_dnn_pipeline(run_id, base_results_dir, global_constants, random_seed
         del X_train_feat, X_val_feat # Libera memória
         gc.collect()
 
-        model_name = f"BDA-F{run_results['bda_num_selected_features']}-Run{run_id}"
+        model_name = f"BDA-F{run_results['num_selected_features']}-Run{run_id}"
         
         final_metrics, history_data = PipelineHelpers.train_and_evaluate_final_model(
             model_name=model_name,

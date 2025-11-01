@@ -22,10 +22,8 @@ import pandas as pd
 import tensorflow as tf
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
-from sklearn.decomposition import PCA
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
 from scipy.signal import butter, filtfilt, welch
-from scipy.stats import skew, kurtosis
 from tqdm import tqdm
 import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend
@@ -52,6 +50,12 @@ TARGET_INPUT_LENGTH = 4096 # Comprimento alvo após remoção da 1ª amostra
 TEST_SIZE = 0.20 # Proporção do conjunto de teste
 VAL_SIZE = 0.15 # Proporção do conjunto de validação
 
+# Configuração de Hardware
+USE_GPU = True # Flag para usar GPU (True) ou forçar CPU (False)
+
+# Configuração de Análise
+USE_XAI = True # Flag para executar análise XAI/SHAP (True) ou pular (False)
+
 # --- Classes Auxiliares ---
 
 class NumpyEncoder(json.JSONEncoder):
@@ -63,7 +67,7 @@ class NumpyEncoder(json.JSONEncoder):
             return float(o)
         elif isinstance(o, np.ndarray):
             return o.tolist()
-        elif isinstance(o, (np.bool_,)):
+        elif isinstance(o, (np.bool_, bool)):
             return bool(o)
         return super(NumpyEncoder, self).default(o)
 
@@ -619,9 +623,23 @@ class Plotting:
         """Plota mapa de calor da frequência de seleção de cada feature."""
         selection_freq = np.mean(feature_selection_history, axis=0)
         
-        fig = plt.figure(figsize=(12, 8))
-        plt.bar(range(len(selection_freq)), selection_freq)
-        plt.xticks(range(len(feature_names)), feature_names, rotation=90, fontsize=8)
+        # Filtra features com frequência > 0
+        if feature_names and len(feature_names) == len(selection_freq):
+            filtered = [(name, freq) for name, freq in zip(feature_names, selection_freq) if freq > 0]
+            if not filtered:
+                print("Nenhuma feature foi selecionada em nenhuma execução.")
+                return
+            filtered_names, filtered_freq = zip(*filtered)
+        else:
+            filtered_freq = [freq for freq in selection_freq if freq > 0]
+            filtered_names = [str(i) for i, freq in enumerate(selection_freq) if freq > 0]
+            if not filtered_freq:
+                print("Nenhuma feature foi selecionada em nenhuma execução.")
+                return
+        
+        fig = plt.figure(figsize=(max(10, len(filtered_freq) * 0.3), 6))
+        bars = plt.bar(range(len(filtered_freq)), filtered_freq, alpha=0.7, color='skyblue')
+        plt.xticks(range(len(filtered_names)), filtered_names, rotation=90, fontsize=8)
         plt.title(title, fontsize=16)
         plt.xlabel('Features', fontsize=14)
         plt.ylabel('Selection Frequency', fontsize=14)
@@ -732,6 +750,9 @@ class Plotting:
     @staticmethod
     def plot_per_run_confusion_matrices(results_list, pipeline_name, class_names, plots_dir, save_plots, title="Per-Run Confusion Matrices", filename_prefix="cm_run"):
         """Plota matrizes de confusão para cada execução."""
+        # Make filename prefix unique per pipeline
+        unique_prefix = f"cm_run_{pipeline_name.lower().replace('_', '')}_"
+        
         for run_result in results_list:
             if 'final_metrics' not in run_result or 'confusion_matrix' not in run_result['final_metrics']:
                 continue
@@ -747,7 +768,7 @@ class Plotting:
             plt.ylabel('True Class', fontsize=14)
             plt.xlabel('Predicted Class', fontsize=14)
             
-            filename = f"{filename_prefix}_{run_id}.png"
+            filename = f"{unique_prefix}{run_id}.png"
             Plotting._handle_plot(fig, filename, plots_dir, save_plots, f"CM {pipeline_name} Run {run_id}")
 
     @staticmethod
@@ -795,3 +816,280 @@ class Plotting:
         
         filename = f"comparison_aggregated_cm_{pipeline_name}.png"
         Plotting._handle_plot(fig, filename, plots_dir, save_plots, f"CM Agregada - {pipeline_name}")
+
+    @staticmethod
+    def plot_delta_accuracy_per_run(results_dict_list, plots_dir, save_plots, title="Delta Accuracy per Run", filename="delta_accuracy_per_run.png"):
+        """Plota a diferença de acurácia (RHCB5 - BDA) para cada execução."""
+        if len(results_dict_list) != 2:
+            print("Erro: plot_delta_accuracy_per_run requer exatamente 2 pipelines.")
+            return
+        
+        pipeline_names = list(results_dict_list.keys())
+        results1 = results_dict_list[pipeline_names[0]]
+        results2 = results_dict_list[pipeline_names[1]]
+        
+        # Assume RHCB5 é o segundo, BDA o primeiro
+        bda_results = results1 if 'BDA' in pipeline_names[0] else results2
+        rhcb5_results = results2 if 'RHCB5' in pipeline_names[1] else results1
+        
+        # Extrai acurácias por run_id
+        bda_accs = []
+        rhcb5_accs = []
+        run_ids = []
+        
+        for run in bda_results:
+            if 'final_metrics' in run and 'accuracy' in run['final_metrics']:
+                run_id = run.get('run_id')
+                if run_id is not None:
+                    run_ids.append(run_id)
+                    bda_accs.append(run['final_metrics']['accuracy'])
+        
+        for run in rhcb5_results:
+            if 'final_metrics' in run and 'accuracy' in run['final_metrics']:
+                rhcb5_accs.append(run['final_metrics']['accuracy'])
+        
+        if len(bda_accs) != len(rhcb5_accs):
+            print("Erro: Número diferente de execuções válidas entre pipelines.")
+            return
+        
+        diff_acc = np.array(rhcb5_accs) - np.array(bda_accs)
+        
+        fig = plt.figure(figsize=(12, 6))
+        bars = plt.bar(run_ids, diff_acc, color=['red' if x < 0 else 'green' for x in diff_acc], alpha=0.7)
+        plt.axhline(0, color='black', linewidth=1, linestyle='--')
+        plt.title(title, fontsize=16)
+        plt.xlabel('Run ID', fontsize=14)
+        plt.ylabel('Delta Accuracy (RHCB5 - BDA)', fontsize=14)
+        plt.grid(True, alpha=0.3)
+        
+        # Adiciona valores nas barras
+        for bar, val in zip(bars, diff_acc):
+            plt.text(bar.get_x() + bar.get_width()/2, bar.get_height() + (0.001 if val >= 0 else -0.001), 
+                     f'{val:.4f}', ha='center', va='bottom' if val >= 0 else 'top', fontsize=8)
+        
+        Plotting._handle_plot(fig, filename, plots_dir, save_plots, title)
+
+    @staticmethod
+    def plot_confusion_matrix_std_heatmap(results_list, pipeline_name, class_names, plots_dir, save_plots, title="Confusion Matrix Std Heatmap", filename="cm_std_heatmap.png"):
+        """Plota heatmap do desvio padrão de cada célula da matriz de confusão ao longo das execuções."""
+        cms = []
+        for run_result in results_list:
+            if 'final_metrics' in run_result and 'confusion_matrix' in run_result['final_metrics']:
+                cm = np.array(run_result['final_metrics']['confusion_matrix'])
+                cms.append(cm)
+        
+        if not cms:
+            print(f"Nenhuma matriz de confusão encontrada para {pipeline_name}.")
+            return
+        
+        cms_array = np.array(cms)  # Shape: (n_runs, n_classes, n_classes)
+        std_cm = np.std(cms_array, axis=0)
+        
+        # Make filename unique per pipeline
+        unique_filename = f"cm_std_heatmap_{pipeline_name.lower().replace('_', '')}.png"
+        
+        fig = plt.figure(figsize=(10, 8))
+        sns.heatmap(std_cm, annot=True, fmt='.2f', cmap='Reds',
+                    xticklabels=class_names, yticklabels=class_names,
+                    annot_kws={"size": 12})
+        plt.title(f'Desvio Padrão da Matriz de Confusão - {pipeline_name}', fontsize=16)
+        plt.ylabel('Classe Verdadeira', fontsize=14)
+        plt.xlabel('Classe Predita', fontsize=14)
+        
+        Plotting._handle_plot(fig, unique_filename, plots_dir, save_plots, title)
+
+    @staticmethod
+    def plot_feature_selection_frequency(bda_results_list, feature_names, plots_dir, save_plots, title="Feature Selection Frequency", filename="feature_selection_frequency.png"):
+        """Plota a frequência de seleção de cada feature ao longo das execuções BDA."""
+        selected_vectors = []
+        for run_result in bda_results_list:
+            if 'selected_features_vector' in run_result:
+                vector = np.array(run_result['selected_features_vector'])
+                selected_vectors.append(vector)
+
+        if not selected_vectors:
+            print("Nenhum vetor de features selecionadas encontrado.")
+            return
+
+        # Soma ao longo das runs (axis=0)
+        selection_freq = np.sum(selected_vectors, axis=0)
+
+        # Filtra features com frequência > 0
+        if feature_names and len(feature_names) == len(selection_freq):
+            filtered = [(name, freq) for name, freq in zip(feature_names, selection_freq) if freq > 0]
+            if not filtered:
+                print("Nenhuma feature foi selecionada em nenhuma execução.")
+                return
+            filtered_names, filtered_freq = zip(*filtered)
+        else:
+            filtered_freq = [freq for freq in selection_freq if freq > 0]
+            filtered_names = [str(i) for i, freq in enumerate(selection_freq) if freq > 0]
+            if not filtered_freq:
+                print("Nenhuma feature foi selecionada em nenhuma execução.")
+                return
+
+        fig = plt.figure(figsize=(max(10, len(filtered_freq) * 0.3), 6))
+        bars = plt.bar(filtered_names, filtered_freq, alpha=0.7, color='skyblue')
+        plt.title(title, fontsize=16)
+        plt.xlabel('Features', fontsize=14)
+        plt.ylabel('Selection Frequency', fontsize=14)
+        plt.grid(True, alpha=0.3)
+        plt.xticks(rotation=90, fontsize=8)
+
+        Plotting._handle_plot(fig, filename, plots_dir, save_plots, title)
+
+    @staticmethod
+    def plot_distribution_plots(results_dict_list, plots_dir, save_plots, title="Distribution Plots", filename="distribution_plots.png"):
+        """Plota distribuições das métricas principais."""
+        df_plot = Plotting._extract_metrics_for_plotting(results_dict_list, list(results_dict_list.keys())[0])
+        
+        metrics = ['accuracy', 'f1_macro', 'execution_time_min']
+        fig, axs = plt.subplots(1, len(metrics), figsize=(6*len(metrics), 5))
+        if len(metrics) == 1: axs = [axs]
+        
+        for ax, metric in zip(axs, metrics):
+            for pipeline in df_plot['Pipeline'].unique():
+                data = df_plot[df_plot['Pipeline'] == pipeline][metric].dropna()
+                ax.hist(data, alpha=0.7, label=pipeline, bins=15)
+            ax.set_xlabel(metric.replace('_', ' ').title())
+            ax.set_ylabel('Frequency')
+            ax.legend()
+            ax.grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        Plotting._handle_plot(fig, filename, plots_dir, save_plots, title)
+
+    @staticmethod
+    def plot_performance_vs_cost_scatter(results_dict_list, plots_dir, save_plots, title="Performance vs Cost Scatter Plot", filename="performance_vs_cost_scatter.png"):
+        """
+        Create a scatter plot of execution time vs F1-macro performance for both pipelines.
+        
+        Args:
+            results_dict_list (dict): {'BDA_DNN': [run1_res, ...], 'RHCB5': [run1_res, ...]}
+            plots_dir (str): Directory to save plots
+            save_plots (bool): Whether to save plots
+            title (str): Plot title
+            filename (str): Output filename
+        """
+        print("Generating Performance vs Cost scatter plot...")
+        
+        fig = plt.figure(figsize=(10, 8))
+        
+        colors = {'BDA_DNN': 'blue', 'RHCB5': 'red'}
+        labels = {'BDA_DNN': 'BDA-DNN', 'RHCB5': 'RHCB5'}
+        
+        for pipeline_name, results_list in results_dict_list.items():
+            exec_times = []
+            f1_scores = []
+            
+            for run_result in results_list:
+                if 'final_metrics' in run_result and 'execution_time_sec' in run_result:
+                    f1_macro = run_result['final_metrics'].get('classification_report', {}).get('macro avg', {}).get('f1-score')
+                    exec_time = run_result['execution_time_sec']
+                    
+                    if f1_macro is not None and exec_time is not None:
+                        f1_scores.append(f1_macro)
+                        exec_times.append(exec_time)
+            
+            if exec_times and f1_scores:
+                plt.scatter(exec_times, f1_scores, 
+                          c=colors.get(pipeline_name, 'black'), 
+                          label=labels.get(pipeline_name, pipeline_name),
+                          alpha=0.7, s=50, edgecolors='black')
+        
+        plt.xlabel('Execution Time (seconds)', fontsize=14)
+        plt.ylabel('F1-Macro Score', fontsize=14)
+        plt.title(title, fontsize=16)
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        
+        # Add some statistics in text
+        for pipeline_name, results_list in results_dict_list.items():
+            exec_times = []
+            f1_scores = []
+            
+            for run_result in results_list:
+                if 'final_metrics' in run_result and 'execution_time_sec' in run_result:
+                    f1_macro = run_result['final_metrics'].get('classification_report', {}).get('macro avg', {}).get('f1-score')
+                    exec_time = run_result['execution_time_sec']
+                    
+                    if f1_macro is not None and exec_time is not None:
+                        f1_scores.append(f1_macro)
+                        exec_times.append(exec_time)
+            
+            if exec_times and f1_scores:
+                mean_time = np.mean(exec_times)
+                mean_f1 = np.mean(f1_scores)
+                std_f1 = np.std(f1_scores)
+                
+                # Position text near the cluster center
+                x_pos = mean_time
+                y_pos = mean_f1 + 0.02
+                
+                plt.text(x_pos, y_pos, 
+                        f'{labels.get(pipeline_name, pipeline_name)}\n'
+                        f'F1: {mean_f1:.3f}±{std_f1:.3f}\n'
+                        f'Time: {mean_time:.1f}s',
+                        ha='center', va='bottom', fontsize=10,
+                        bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.8))
+        
+        Plotting._handle_plot(fig, filename, plots_dir, save_plots, title)
+
+    @staticmethod
+    def plot_sensitivity_analysis(bda_results_list, plots_dir, save_plots, title="Sensitivity Analysis - Number of Features", filename="sensitivity_analysis.png"):
+        """Plota análise de sensibilidade: número de features vs acurácia e falsos positivos."""
+        num_features_list = []
+        accuracies = []
+        false_positives_list = []
+        
+        for run_result in bda_results_list:
+            if 'final_metrics' in run_result and 'num_selected_features' in run_result:
+                num_feat = run_result['num_selected_features']
+                acc = run_result['final_metrics']['accuracy']
+                
+                # Calculate false positives from confusion matrix
+                cm = run_result['final_metrics'].get('confusion_matrix')
+                if cm:
+                    cm_array = np.array(cm)
+                    # False positives = sum of off-diagonal elements
+                    fp = np.sum(cm_array) - np.sum(np.diag(cm_array))
+                    false_positives_list.append(fp)
+                    num_features_list.append(num_feat)
+                    accuracies.append(acc)
+        
+        if not num_features_list:
+            print("Nenhum dado válido encontrado para análise de sensibilidade.")
+            return
+        
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+        
+        # Plot 1: Num features vs Accuracy
+        ax1.scatter(num_features_list, accuracies, alpha=0.7, s=50, edgecolors='black')
+        ax1.set_xlabel('Number of Selected Features', fontsize=14)
+        ax1.set_ylabel('Accuracy', fontsize=14)
+        ax1.set_title('Accuracy vs Number of Features', fontsize=16)
+        ax1.grid(True, alpha=0.3)
+        
+        # Add trend line
+        if len(num_features_list) > 1:
+            z = np.polyfit(num_features_list, accuracies, 1)
+            p = np.poly1d(z)
+            ax1.plot(num_features_list, p(num_features_list), "r--", alpha=0.8, label=f'Trend: {z[0]:.4f}x + {z[1]:.4f}')
+            ax1.legend()
+        
+        # Plot 2: Num features vs False Positives
+        ax2.scatter(num_features_list, false_positives_list, alpha=0.7, s=50, edgecolors='black', color='red')
+        ax2.set_xlabel('Number of Selected Features', fontsize=14)
+        ax2.set_ylabel('False Positives', fontsize=14)
+        ax2.set_title('False Positives vs Number of Features', fontsize=16)
+        ax2.grid(True, alpha=0.3)
+        
+        # Add trend line
+        if len(num_features_list) > 1:
+            z = np.polyfit(num_features_list, false_positives_list, 1)
+            p = np.poly1d(z)
+            ax2.plot(num_features_list, p(num_features_list), "b--", alpha=0.8, label=f'Trend: {z[0]:.4f}x + {z[1]:.4f}')
+            ax2.legend()
+        
+        plt.tight_layout()
+        Plotting._handle_plot(fig, filename, plots_dir, save_plots, title)

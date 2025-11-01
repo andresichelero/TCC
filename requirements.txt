@@ -8,3 +8,4 @@ tensorflow[and-cuda]
 tqdm==4.67.1
 seaborn==0.13.2
 scikeras==0.13.0
+shap==0.49.1

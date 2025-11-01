@@ -15,10 +15,10 @@ Ele depende de 'pipeline_utils.py' para:
 import os
 import sys
 import time
-import datetime
 import json
 import numpy as np
 import tensorflow as tf
+from tensorflow import keras
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import (
     Input, Conv1D, MaxPooling1D, Dropout, 
@@ -26,6 +26,7 @@ from tensorflow.keras.layers import (
 )
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 import gc
+import matplotlib.pyplot as plt
 
 # Importa os utilitários compartilhados
 try:
@@ -83,9 +84,241 @@ def build_rhcb5_model(input_shape, num_classes):
     )
     return model
 
-# --- Função Principal do Pipeline ---
+# --- Funções de Interpretabilidade (XAI) ---
 
-def run_rhcb5_pipeline(run_id, base_results_dir, global_constants, random_seed_for_run, data_processed=None, raw_labels=None):
+def make_gradcam_heatmap(model, img_array, pred_index=None):
+    """
+    Generate Grad-CAM heatmap for RHCB5 model.
+    
+    Args:
+        model: Trained Keras model
+        img_array: Input signal array (shape: (1, seq_length, 1))
+        pred_index: Index of the class to explain (if None, uses predicted class)
+    
+    Returns:
+        heatmap: Grad-CAM heatmap
+    """
+    # Find the last convolutional layer
+    last_conv_layer = None
+    for layer in reversed(model.layers):
+        if isinstance(layer, Conv1D):
+            last_conv_layer = layer
+            break
+    
+    if last_conv_layer is None:
+        raise ValueError("No Conv1D layer found in the model for Grad-CAM")
+    
+    # Create a model that maps the input to the activations of the last conv layer
+    grad_model = Model(
+        inputs=model.inputs,
+        outputs=[last_conv_layer.output, model.output]
+    )
+    
+    with tf.GradientTape() as tape:
+        conv_outputs, predictions = grad_model(img_array)
+        if pred_index is None:
+            pred_index = tf.argmax(predictions[0])
+        class_channel = predictions[:, pred_index]
+    
+    # Compute gradients
+    grads = tape.gradient(class_channel, conv_outputs)
+    
+    # Global average pooling of gradients
+    pooled_grads = tf.reduce_mean(grads, axis=(0, 1))
+    
+    # Weight the convolutional outputs
+    conv_outputs = conv_outputs[0]
+    heatmap = conv_outputs @ pooled_grads[..., tf.newaxis]
+    heatmap = tf.squeeze(heatmap)
+    
+    # Apply ReLU and normalize
+    heatmap = tf.maximum(heatmap, 0) / tf.maximum(tf.reduce_max(heatmap), 1e-10)
+    
+    return heatmap.numpy()
+
+def apply_gradcam_to_samples(model, X_data, y_data, class_names, plots_dir, save_plots, num_samples_per_class=3):
+    """
+    Apply Grad-CAM to sample signals from each class and generate visualizations.
+    
+    Args:
+        model: Trained Keras model
+        X_data: Input data (shape: (n_samples, seq_length, 1))
+        y_data: True labels
+        class_names: List of class names
+        plots_dir: Directory to save plots
+        save_plots: Whether to save plots
+        num_samples_per_class: Number of samples to analyze per class
+    """
+    print("Generating Grad-CAM heatmaps...")
+    
+    fig, axes = plt.subplots(len(class_names), num_samples_per_class, 
+                            figsize=(5*num_samples_per_class, 4*len(class_names)))
+    if len(class_names) == 1:
+        axes = axes.reshape(1, -1)
+    
+    samples_analyzed = 0
+    
+    for class_idx, class_name in enumerate(class_names):
+        # Get samples from this class
+        class_indices = np.where(y_data == class_idx)[0]
+        if len(class_indices) < num_samples_per_class:
+            selected_indices = class_indices
+        else:
+            selected_indices = np.random.choice(class_indices, num_samples_per_class, replace=False)
+        
+        for sample_idx, data_idx in enumerate(selected_indices):
+            # Get the signal
+            signal = X_data[data_idx]
+            signal_reshaped = signal.reshape(1, -1, 1)
+            
+            # Generate heatmap
+            heatmap = make_gradcam_heatmap(model, signal_reshaped.astype(np.float32))
+            
+            # Plot
+            ax = axes[class_idx, sample_idx]
+            
+            # Plot original signal
+            ax.plot(signal.flatten(), color='blue', alpha=0.7, label='Signal')
+            
+            # Overlay heatmap (scaled to signal range)
+            signal_range = np.max(signal) - np.min(signal)
+            heatmap_scaled = heatmap * signal_range * 0.5  # Scale for visibility
+            ax.fill_between(range(len(heatmap)), 
+                          np.min(signal) - heatmap_scaled,
+                          np.max(signal) + heatmap_scaled,
+                          color='red', alpha=0.3, label='Grad-CAM')
+            
+            ax.set_title(f'{class_name} - Sample {sample_idx+1}')
+            ax.set_xlabel('Time (samples)')
+            ax.set_ylabel('Amplitude')
+            ax.legend()
+            ax.grid(True, alpha=0.3)
+            
+            samples_analyzed += 1
+    
+    plt.tight_layout()
+    Plotting._handle_plot(fig, "gradcam_heatmaps.png", plots_dir, save_plots, 
+                         "Grad-CAM Heatmaps for RHCB5")
+
+def perform_shap_analysis(model, X_background, X_test, y_test, class_names, plots_dir, save_plots, nsamples=500):
+    """
+    Perform SHAP analysis on the RHCB5 model.
+    
+    Args:
+        model: Trained Keras model
+        X_background: Background dataset for SHAP (smaller subset)
+        X_test: Test dataset
+        y_test: Test labels
+        class_names: List of class names
+        plots_dir: Directory to save plots
+        save_plots: Whether to save plots
+        nsamples: Number of samples for SHAP approximation
+    """
+    try:
+        import shap
+        print("Performing SHAP analysis...")
+        
+        # Create SHAP explainer
+        # For sequential models, we need to flatten the input for KernelExplainer
+        def model_wrapper(x):
+            # x is flattened (batch, 4096), reshape to (batch, 4096, 1)
+            x_reshaped = x.reshape(x.shape[0], -1, 1)
+            return model.predict(x_reshaped)
+        
+        background_size = min(20, len(X_background))  # Smaller background for KernelExplainer speed
+        background_flat = X_background[:background_size].reshape(background_size, -1)  # Flatten to (20, 4096)
+        
+        # Use KernelExplainer with flattened input
+        explainer = shap.KernelExplainer(model_wrapper, background_flat)
+        
+        # Select fewer test samples for analysis (KernelExplainer is slower)
+        test_size = min(5, len(X_test))
+        test_indices = np.random.choice(len(X_test), test_size, replace=False)
+        X_test_sample = X_test[test_indices]
+        X_test_flat = X_test_sample.reshape(test_size, -1)  # Flatten to (5, 4096)
+        y_test_sample = y_test[test_indices]
+        
+        # Calculate SHAP values
+        shap_values = explainer.shap_values(X_test_flat)
+        
+        # Get predictions for the test sample
+        predictions = model.predict(X_test_sample)
+        pred_classes = np.argmax(predictions, axis=1)
+        
+        # Handle SHAP values shape
+        if isinstance(shap_values, list):
+            # Multi-class case: list of 2D arrays (n_samples, n_features)
+            shap_for_pred = np.array([shap_values[pred_class][i] for i, pred_class in enumerate(pred_classes)])
+        else:
+            # Single output case
+            shap_for_pred = shap_values
+        
+        # shap_for_pred should be 2D (n_samples, n_features)
+        
+        # Save SHAP values BEFORE attempting to plot (so we don't lose data if plotting fails)
+        shap_results = {
+            "shap_values_sample": shap_for_pred.tolist(),
+            "test_predictions": predictions.tolist(),
+            "test_true_labels": y_test_sample.tolist(),
+            "pred_classes": pred_classes.tolist(),
+            "background_size": background_size,
+            "test_sample_size": test_size
+        }
+        
+        # Save to JSON file
+        shap_json_path = os.path.join(plots_dir, "shap_values.json")
+        try:
+            with open(shap_json_path, 'w') as f:
+                json.dump(shap_results, f, indent=4)
+            print(f"SHAP values saved to: {shap_json_path}")
+        except Exception as e:
+            print(f"Warning: Could not save SHAP values to JSON: {e}")
+        
+        # Now attempt to create plots
+        try:
+            # Plot summary plot
+            fig_summary = plt.figure(figsize=(12, 8))
+            shap.summary_plot(shap_for_pred, 
+                             feature_names=[f't_{i}' for i in range(shap_for_pred.shape[1])],
+                             show=False)
+            Plotting._handle_plot(fig_summary, "shap_summary_plot.png", plots_dir, save_plots,
+                                 "SHAP Summary Plot for RHCB5")
+        except Exception as e:
+            print(f"Warning: Could not create SHAP summary plot: {e}")
+        
+        try:
+            # Plot waterfall plot for first sample
+            fig_waterfall = plt.figure(figsize=(12, 6))
+            # Get expected value for the predicted class of the first sample
+            if isinstance(explainer.expected_value, list):
+                expected_val = explainer.expected_value[pred_classes[0]]
+            else:
+                expected_val = explainer.expected_value
+            
+            # Create an Explanation object for waterfall plot
+            explanation = shap.Explanation(
+                values=shap_for_pred[0],
+                base_values=expected_val,
+                data=X_test_flat[0],
+                feature_names=[f't_{i}' for i in range(shap_for_pred.shape[1])]
+            )
+            
+            shap.plots.waterfall(explanation, show=False)
+            Plotting._handle_plot(fig_waterfall, "shap_waterfall_sample.png", plots_dir, save_plots,
+                                 "SHAP Waterfall Plot - Sample 1")
+        except Exception as e:
+            print(f"Warning: Could not create SHAP waterfall plot: {e}")
+        
+        return shap_results
+        
+    except ImportError:
+        print("SHAP library not available. Skipping SHAP analysis.")
+        return None
+    except Exception as e:
+        print(f"Error in SHAP analysis: {e}")
+        return None
+
+def run_rhcb5_pipeline(run_id, base_results_dir, global_constants, random_seed_for_run, data_processed=None, raw_labels=None, run_xai=False):
     """
     Encapsula a execução completa do pipeline RHCB5 para uma única execução.
     
@@ -211,11 +444,48 @@ def run_rhcb5_pipeline(run_id, base_results_dir, global_constants, random_seed_f
                 filename="rhcb5_training_history.png",
             )
         
+        # 6. Análise de Interpretabilidade (XAI)
+        if run_xai:
+            print("\n--- 6. Análise de Interpretabilidade (XAI) ---")
+            
+            # Grad-CAM analysis
+            try:
+                apply_gradcam_to_samples(
+                    model, X_test, y_test, CLASS_NAMES, 
+                    PLOTS_DIR, SAVE_PLOTS_PER_RUN
+                )
+                run_results["gradcam_completed"] = True
+            except Exception as e:
+                print(f"Erro na análise Grad-CAM: {e}")
+                run_results["gradcam_error"] = str(e)
+            
+            # SHAP analysis
+            try:
+                # Use a subset of training data as background
+                background_size = min(100, len(X_train))
+                background_indices = np.random.choice(len(X_train), background_size, replace=False)
+                X_background = X_train[background_indices]
+                
+                shap_results = perform_shap_analysis(
+                    model, X_background, X_test[:5], y_test[:5],  # Limit test size for SHAP
+                    CLASS_NAMES, PLOTS_DIR, SAVE_PLOTS_PER_RUN
+                )
+                if shap_results:
+                    run_results["shap_results"] = shap_results
+                    run_results["shap_completed"] = True
+                else:
+                    run_results["shap_completed"] = False
+            except Exception as e:
+                print(f"Erro na análise SHAP: {e}")
+                run_results["shap_error"] = str(e)
+        else:
+            print("\n--- 6. Análise de Interpretabilidade (XAI) - Pulada ---")
+
         del X_train, y_train, X_val, y_val # Libera memória
         gc.collect()
 
-        # 6. Avaliação Final
-        print("\n--- 5. Avaliação Final no Conjunto de Teste ---")
+        # 7. Avaliação Final no Conjunto de Teste
+        print("\n--- 7. Avaliação Final no Conjunto de Teste ---")
         # Carrega o melhor modelo salvo
         try:
             model = tf.keras.models.load_model(MODEL_SAVE_PATH)
@@ -246,7 +516,7 @@ def run_rhcb5_pipeline(run_id, base_results_dir, global_constants, random_seed_f
         traceback.print_exc()
         run_results["error"] = str(e)
 
-    # 7. Finalização
+    # 8. Finalização
     total_execution_time = time.time() - start_time_total
     run_results["execution_time_sec"] = total_execution_time
     print(f"RHCB5 Run {run_id} concluída. Tempo total: {total_execution_time/60:.2f} minutos.")
