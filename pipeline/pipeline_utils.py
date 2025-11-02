@@ -30,6 +30,18 @@ matplotlib.use('Agg')  # Use non-interactive backend
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+# Configurar matplotlib para não mostrar plots automaticamente
+plt.ioff()  # Turn off interactive mode
+matplotlib.interactive(False)  # Ensure non-interactive mode
+
+# Desabilitar qualquer tentativa de mostrar plots
+plt.switch_backend('Agg')  # Forçar backend Agg novamente
+matplotlib.use('Agg', force=True)  # Forçar uso do backend Agg
+
+# Configurar seaborn
+sns.set_style("whitegrid")
+sns.set_palette("husl")
+
 # --- Constantes Globais Compartilhadas ---
 RANDOM_SEED_GLOBAL = 42 # Seed global para operações de setup
 np.random.seed(RANDOM_SEED_GLOBAL)
@@ -262,10 +274,11 @@ class Plotting:
                 print(f"Plot salvo em: {filepath}", flush=True)
             except Exception as e:
                 print(f"Erro ao salvar plot {filepath}: {e}", flush=True)
-            plt.close(fig) # Fecha a figura para liberar memória
         else:
             if title: fig.suptitle(title, fontsize=16)
-            plt.show()
+        
+        # Sempre fechar a figura para liberar memória, independentemente de salvar ou não
+        plt.close(fig)
 
     # --- Funções de Plotagem de Execução Única ---
 

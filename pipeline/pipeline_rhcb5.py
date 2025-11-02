@@ -24,6 +24,7 @@ import time
 import json
 import numpy as np
 import tensorflow as tf
+import keras
 from tensorflow import keras
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import (
@@ -59,7 +60,14 @@ AUGMENT_MAX_SHIFT_PERCENT = 0.2 # % máximo do sinal para "rolar" (Time Shift)
 VERBOSE_LEVEL = 1 # 0 = silencioso, 1 = progresso
 SAVE_PLOTS_PER_RUN = True # Enable plots for individual runs
 
-# --- Função de Aumentação de Dados ---
+# --- Funções Auxiliares para Camadas Lambda ---
+import keras.saving
+@keras.saving.register_keras_serializable()
+def attention_context_sum(x):
+    """Soma o contexto de atenção ao longo do eixo temporal."""
+    return tf.reduce_sum(x, axis=1)
+
+# --- Funções de Aumentação de Dados ---
 
 def _time_shift_augmentation(signal, max_shift_percent=0.2):
     """
@@ -125,7 +133,7 @@ def build_rhcb5_model(input_shape, num_classes):
     
     # 5. Resumo do vetor de contexto
     # (batch, 256, 512) -> (batch, 512)
-    context_vector_sum = Lambda(lambda x: tf.reduce_sum(x, axis=1), 
+    context_vector_sum = Lambda(attention_context_sum, 
                                 name='attention_context_sum')(context_vector)
 
     # Bloco de Classificação (MLP)
