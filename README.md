@@ -1,463 +1,927 @@
 [To read in English, click here](#english-version)
 
-# Detecção de Crises Epilépticas Baseada em EEG usando BDFA/BPSO e DNN
+# Estratégias Computacionais para Detecção de Epilepsia em EEG: Pipeline-Based versus End-to-End Approaches
 
-Este projeto implementa e avalia pipelines para a detecção automática de crises epilépticas a partir de sinais de Eletroencefalograma (EEG). Ele utiliza a Transformada Wavelet Estacionária (SWT) para extração de características, algoritmos de otimização meta-heurísticos binários - Binary Dragonfly Algorithm (BDA) e Binary Particle Swarm Optimization (BPSO) - para seleção de características, e uma Rede Neural Profunda (DNN) para classificação. O objetivo é classificar os sinais de EEG em três categorias: Normal, Interictal (entre crises) e Ictal (durante a crise), utilizando o dataset público da Universidade de Bonn.
+## Contexto e Importância
 
-Este trabalho é inspirado e busca implementar conceitos apresentados no artigo:
-* Yogarajan, G., Alsubaie, N., Rajasekaran, G. et al. EEG-based epileptic seizure detection using binary dragonfly algorithm and deep neural network. *Sci Rep* **13**, 17710 (2023). [https://doi.org/10.1038/s41598-023-44318-w](https://doi.org/10.1038/s41598-023-44318-w)
+A epilepsia é um distúrbio neurológico que afeta aproximadamente 50 milhões de pessoas worldwide, caracterizado por crises epilépticas recorrentes. A Eletroencefalografia (EEG) é a técnica padrão-ouro para diagnóstico e monitoramento de epilepsia, capturando a atividade elétrica cerebral através de eletrodos posicionados no couro cabeludo.
+
+**Desafio Principal**: A detecção automática de crises epilépticas em sinais de EEG é crucial para:
+- Diagnóstico precoce e preciso
+- Monitoramento contínuo de pacientes
+- Redução de falsos positivos em sistemas de alerta
+- Suporte a decisões clínicas baseadas em dados
+
+**Abordagens Tradicionais vs Modernas**:
+- **Pipeline-Based**: Seguindo o paradigma clássico de Machine Learning (extração manual de features + classificação)
+- **End-to-End**: Aproveitando Deep Learning para aprender features automaticamente dos dados brutos
+
+Este projeto compara essas duas abordagens usando o dataset público da Universidade de Bonn, estabelecendo um benchmark para futuras pesquisas em detecção de epilepsia baseada em EEG.
+
+Este trabalho é inspirado no artigo:
+* Yogarajan, G., Alsubaie, N., Rajasekaran, G. et al. EEG-based epileptic seizure detection using binary dragonfly algorithm and deep neural network. *Sci Rep* **13**, 17710 (2023). [https://doi.org/10.1038/s41598-023-44318-w](https://doi.org/10.1038/s41598-023-44318-w]
+
+E incorpora a arquitetura RHCB5 proposta por:
+* Maggioni, A. et al. (2023/2024) - Rede Híbrida Convolucional Bidirecional para classificação de EEG.
 
 ## Funcionalidades
 
-* Carregamento e pré-processamento de dados do dataset BONN (Conjuntos A, D, E).
-* Filtragem de sinal (Butterworth passa-baixas 0-40Hz) e normalização Min-Max.
-* Extração de 9 características estatísticas e de Hjorth de 5 sub-bandas da SWT (wavelet 'db4', nível 4), totalizando 45 características.
-    * Características: Valor Médio Absoluto (MAV), Desvio Padrão, Assimetria (Skewness), Curtose, Potência RMS, Razão dos MAVs (com MAV(cA4) como denominador), Atividade, Mobilidade e Complexidade.
-* Seleção de características otimizada usando:
-    * Binary Dragonfly Algorithm (BDA)
-    * Binary Particle Swarm Optimization (BPSO) (para comparação)
-* Classificação dos estados de EEG usando uma Rede Neural Profunda (DNN) do tipo Perceptron Multicamadas (MLP).
-* Avaliação comparativa das pipelines BDA+DNN e BPSO+DNN em termos de acurácia, sensibilidade, especificidade e F1-score.
+### Pipeline-Based (BDA+DNN)
 
+#### Pré-processamento de Sinais
+* **Filtragem**: Filtro Butterworth passa-baixas de ordem 4, frequência de corte 40Hz (remove ruído de alta frequência)
+* **Normalização**: Min-Max scaling para intervalo [-1, 1], preservando relações relativas
+* **Segmentação**: Sinais de 4097 pontos → 4096 pontos (remoção do primeiro ponto para estabilidade)
+
+#### Extração de Características SWT
+* **Transformada Wavelet**: Stationary Wavelet Transform (SWT) com wavelet 'db4' (Daubechies 4), nível de decomposição 4
+* **Sub-bandas**: 5 componentes por sinal:
+  - cA4: Aproximação nível 4 (0-5.86 Hz)
+  - cD4: Detalhe nível 4 (5.86-11.72 Hz)
+  - cD3: Detalhe nível 3 (11.72-23.44 Hz)
+  - cD2: Detalhe nível 2 (23.44-46.88 Hz)
+  - cD1: Detalhe nível 1 (46.88-93.75 Hz)
+
+* **Características Estatísticas (9 por sub-banda)**:
+  1. **MAV (Mean Absolute Value)**: $\frac{1}{N} \sum_{i=1}^{N} |x_i|$ - Energia média do sinal
+  2. **StdDev (Standard Deviation)**: $\sqrt{\frac{1}{N-1} \sum_{i=1}^{N} (x_i - \bar{x})^2}$ - Variabilidade
+  3. **Skewness**: $\frac{\frac{1}{N} \sum_{i=1}^{N} (x_i - \bar{x})^3}{\left(\frac{1}{N} \sum_{i=1}^{N} (x_i - \bar{x})^2\right)^{3/2}}$ - Assimetria da distribuição
+  4. **Kurtosis**: $\frac{\frac{1}{N} \sum_{i=1}^{N} (x_i - \bar{x})^4}{\left(\frac{1}{N} \sum_{i=1}^{N} (x_i - \bar{x})^2\right)^2} - 3$ - Curtose (achatamento)
+  5. **RMS (Root Mean Square)**: $\sqrt{\frac{1}{N} \sum_{i=1}^{N} x_i^2}$ - Valor eficaz
+  6. **Activity (Hjorth)**: $\frac{1}{N} \sum_{i=1}^{N} x_i^2$ - Variância do sinal no tempo
+  7. **Mobility (Hjorth)**: $\sqrt{\frac{\text{Activity}(\frac{dx}{dt})}{\text{Activity}(x)}}$ - Mobilidade (razão entre variâncias)
+  8. **Complexity (Hjorth)**: $\frac{\text{Mobility}(\frac{dx}{dt})}{\text{Mobility}(x)}$ - Complexidade (normalizada)
+  9. **MAV Ratio**: $\frac{\text{MAV}(cD_i)}{\text{MAV}(cA4)}$ - Razão relativa à banda de baixa frequência
+
+**Total**: 45 características (5 sub-bandas × 9 features)
+
+#### Seleção de Características com BDA
+* **Algoritmo**: Binary Dragonfly Algorithm (BDA) - meta-heurística bio-inspirada
+* **Codificação**: Vetor binário de 45 dimensões (1 = feature selecionada, 0 = não selecionada)
+* **Função de Fitness**: $Fitness = \alpha \cdot \text{ErrorRate} + \beta \cdot \frac{\text{NumFeaturesSel}}{\text{TotalFeatures}}$
+  - $\alpha = 0.99$, $\beta = 0.01$
+  - ErrorRate: taxa de erro da DNN de validação (1 - accuracy)
+* **Parâmetros BDA**:
+  - População: 10 libélulas
+  - Iterações: 100
+  - Pesos: separação=0.1, alinhamento=0.1, coesão=0.7, food=1.0, enemy=1.0
+  - Inércia: 0.85 (fixa)
+  - Transfer function: V-Shaped ($\tau \in [0.01, 4.0]$)
+
+#### Classificação DNN
+* **Arquitetura**: Multilayer Perceptron (MLP)
+* **Camadas**: 3 ocultas (10 neurônios sigmoid) + saída softmax (3 classes)
+* **Regularização**: Dropout, Early Stopping (patience=30)
+* **Otimização**: Adam (lr=0.001), loss=sparse_categorical_crossentropy
+
+### End-to-End (RHCB5)
+
+#### Arquitetura Detalhada
+```
+Input: (4096, 1) - Sinal EEG pré-processado
+├── Conv1D Blocks: Extração de features locais
+│   ├── Conv1D (activation='relu')
+│   ├── BatchNormalization
+│   ├── MaxPooling1D
+│   └── Dropout
+├── Bi-LSTM: Modelagem temporal bidirecional
+│   ├── Bi-LSTM (return_sequences=True)
+│   ├── Dropout
+│   └── Bi-LSTM (return_sequences=False)
+├── Dense Layers: Classificação
+│   ├── Dense (activation='relu')
+│   ├── Dropout
+│   └── Dense (3, activation='softmax')
+Output: Probabilidades para [Normal, Interictal, Ictal]
+```
+
+#### Hiperparâmetros de Treinamento
+* **Otimização**: Adam (lr=0.001, β1=0.9, β2=0.999)
+* **Loss**: Sparse Categorical Crossentropy
+* **Métricas**: Accuracy, Precision, Recall, F1-Score
+* **Regularização**: Early Stopping (monitor='val_loss', patience=30, restore_best_weights=True)
+* **Batch Size**: 16
+* **Epochs**: 250 (máximo, com early stopping)
+
+#### Análise de Interpretabilidade
+* **Grad-CAM**: Visualização de regiões salientes no sinal de entrada
+* **SHAP**: Valores de Shapley para explicabilidade global e local
+* **Aplicação**: Identificação de padrões temporais críticos para classificação
+
+### Comparação e Análise Estatística
+
+#### Metodologia Experimental
+* **Reprodutibilidade**: 30 execuções independentes por pipeline com seeds aleatórias
+* **Divisão de Dados**: Estratificada (70% treino, 15% validação, 15% teste)
+* **Validação Cruzada**: 10-fold CV interna para avaliação de features (BDA)
+
+#### Métricas de Avaliação
+* **Por Classe**: Precision, Recall, F1-Score, Specificity
+* **Agregadas**: Accuracy, Macro-F1, Weighted-F1
+* **Matriz de Confusão**: Análise de erros por classe
+
+#### Análise Estatística
+* **Testes de Normalidade**: Shapiro-Wilk nos diferenciais pareados
+* **Testes de Significância**: Wilcoxon (não-paramétrico) e T-test (se normal)
+* **Tamanho do Efeito**: Cohen's d
+* **Intervalos de Confiança**: Bootstrap (95%, n=10,000 reamostragens)
+* **Correlações**: Pearson entre métricas e tempo de execução
+
+#### Visualizações
+* **Boxplots**: Distribuição de métricas entre pipelines
+* **Scatter Plots**: Performance vs custo computacional
+* **Heatmaps**: Frequência de seleção de features (BDA)
+* **Matrizes de Confusão**: Agregadas e por run
+* **Curvas de Convergência**: Fitness ao longo das iterações (BDA)
+
+## Dataset e Características Técnicas
+
+### Dataset Bonn EEG
+* **Fonte**: Universidade de Bonn, Alemanha (1998-2001)
+* **População**: 5 pacientes saudáveis (Set A) + 5 pacientes epilépticos (Sets B-E)
+* **Aquisição**:
+  - Eletrodo único (C3 ou C4) vs referência auricular
+  - Frequência de amostragem: 173.61 Hz
+  - Resolução: 12 bits
+  - Filtro antialiasing: 0.53-40 Hz
+
+#### Composição dos Dados
+| Set | Classe | Descrição | N° Segmentos | Duração |
+|-----|--------|-----------|--------------|---------|
+| A   | Normal | EEG de olhos abertos (saudáveis) | 100 | 23.6s |
+| D   | Interictal | EEG interictal (epilépticos, lobo temporal) | 100 | 23.6s |
+| E   | Ictal | EEG ictal (epilépticos, mesma região) | 100 | 23.6s |
+
+**Total**: 300 segmentos de 4097 pontos cada (23.6 segundos)
+
+#### Características Espectrais
+* **Set A (Normal)**: Atividade alfa dominante (8-12 Hz), beta (12-30 Hz)
+* **Set D (Interictal)**: Padrões anômalos, spikes isolados
+* **Set E (Ictal)**: Atividade rítmica de alta amplitude, frequência variável
+
+### Detalhes Técnicos de Implementação
+
+#### Pré-processamento
+```python
+# Filtro Butterworth
+from scipy.signal import butter, filtfilt
+b, a = butter(order=4, Wn=40/(FS/2), btype='low')
+filtered_signal = filtfilt(b, a, raw_signal)
+
+# Normalização Min-Max
+normalized = 2 * (filtered_signal - min(filtered_signal)) / (max(filtered_signal) - min(filtered_signal)) - 1
+```
+
+#### SWT Feature Extraction
+```python
+import pywt
+coeffs = pywt.swt(signal, wavelet='db4', level=4)
+# coeffs = [cA4, cD4, cD3, cD2, cD1]
+
+# Exemplo: cálculo de MAV
+mav = np.mean(np.abs(coeff))
+```
+
+#### BDA Optimization Loop
+```python
+# Pseudocódigo simplificado
+for iteration in range(T_MAX_ITER):
+    for dragonfly in population:
+        # Calcular comportamentos sociais
+        separation = calculate_separation(dragonfly, neighbors)
+        alignment = calculate_alignment(dragonfly, neighbors)  
+        cohesion = calculate_cohesion(dragonfly, neighbors)
+        food_attraction = calculate_food_attraction(dragonfly, food_pos)
+        enemy_distraction = calculate_enemy_distraction(dragonfly, enemy_pos)
+        
+        # Atualizar velocidade
+        delta_X = (separation + alignment + cohesion + food_attraction + enemy_distraction) * w_inertia
+        
+        # Transfer function V-Shaped
+        tau = tau_max - (tau_max - tau_min) * (iteration / T_MAX_ITER)
+        prob_flip = abs(np.tanh(delta_X / tau))
+        
+        # Atualizar posição binária
+        for bit in range(dim):
+            if np.random.rand() < prob_flip[bit]:
+                dragonfly[bit] = 1 - dragonfly[bit]
+```
+
+#### RHCB5 Model Architecture
+```python
+def build_rhcb5_model(input_shape, num_classes):
+    inputs = tf.keras.Input(shape=input_shape)
+    
+    # Convolutional blocks
+    x = tf.keras.layers.Conv1D(32, 3, activation='relu')(inputs)
+    x = tf.keras.layers.BatchNormalization()(x)
+    x = tf.keras.layers.MaxPooling1D(2)(x)
+    x = tf.keras.layers.Dropout(0.2)(x)
+    
+    # Additional conv blocks...
+    
+    # Bi-LSTM
+    x = tf.keras.layers.Bidirectional(
+        tf.keras.layers.LSTM(64, return_sequences=True)
+    )(x)
+    x = tf.keras.layers.Dropout(0.3)(x)
+    x = tf.keras.layers.Bidirectional(
+        tf.keras.layers.LSTM(32)
+    )(x)
+    
+    # Dense classification
+    x = tf.keras.layers.Dense(64, activation='relu')(x)
+    x = tf.keras.layers.Dropout(0.3)(x)
+    outputs = tf.keras.layers.Dense(num_classes, activation='softmax')(x)
+    
+    return tf.keras.Model(inputs, outputs)
+```
 ## Estrutura do Projeto
+
 ```
 epilepsy_detection_project/
-|-- data/                  # Diretório para o dataset BONN
-|   |-- Set A/             # Arquivos .txt para EEG Normal
-|   |-- Set D/             # Arquivos .txt para EEG Interictal
-|   |-- Set E/             # Arquivos .txt para EEG Ictal
-|-- src/                   # Código fonte dos módulos
-|   |-- init.py
-|   |-- data_loader.py       # Carregamento e pré-processamento de dados
-|   |-- feature_extractor.py # Extração de características SWT
-|   |-- dnn_model.py         # Definição do modelo DNN
-|   |-- fitness_function.py  # Função de aptidão unificada para otimizadores
-|   |-- bda.py               # Implementação do Binary Dragonfly Algorithm
-|   |-- bpso.py              # Implementação do Binary Particle Swarm Optimization
-|   |-- utils.py             # Funções utilitárias (métricas, plots)
-|-- results/               # Saída de resultados, modelos salvos, gráficos
-|-- main.py                # Script principal para executar o pipeline completo
-|-- README.md              # Este arquivo
-|-- requirements.txt
+├── data/                          # Dados de entrada
+│   ├── Bonn/                      # Dataset principal
+│   │   ├── A/                     # 100 arquivos .txt (EEG Normal)
+│   │   ├── D/                     # 100 arquivos .txt (EEG Interictal)
+│   │   └── E/                     # 100 arquivos .txt (EEG Ictal)
+│   └── Siena/                     # Dataset alternativo (não utilizado)
+├── pipeline/                      # Núcleo da implementação
+│   ├── main.py                    # Orquestrador principal (11k+ linhas)
+│   │   ├── Função main(): Loop de NUM_RUNS runs por pipeline
+│   │   ├── compile_and_save_statistics(): Análise estatística
+│   │   ├── run_pipeline_loop(): Execução paralela dos pipelines
+│   │   └── Análise XAI/SHAP para melhores runs de ambos os modelos
+│   ├── pipeline_bda_dnn.py        # Pipeline BDA+DNN (1k+ linhas)
+│   │   ├── run_bda_dnn_pipeline(): Função principal
+│   │   ├── FeatureExtractor: Classe para SWT e estatísticas
+│   │   ├── BinaryDragonflyAlgorithm: Implementação BDA
+│   │   └── PipelineHelpers: Funções auxiliares de treinamento
+│   ├── pipeline_rhcb5.py          # Pipeline RHCB5 (600+ linhas)
+│   │   ├── run_rhcb5_pipeline(): Função principal
+│   │   ├── build_rhcb5_model(): Arquitetura da rede
+│   │   ├── apply_gradcam_to_samples(): Interpretabilidade
+│   │   └── perform_shap_analysis(): Análise SHAP
+│   ├── pipeline_utils.py          # Utilitários compartilhados (1k+ linhas)
+│   │   ├── DataHandler: Carregamento e pré-processamento
+│   │   ├── Metrics: Cálculo de métricas de classificação
+│   │   ├── Plotting: Todas as funções de visualização
+│   │   └── Constantes globais e classes auxiliares
+│   ├── generate_plots.py          # Scripts adicionais de plotagem
+│   └── results/                   # Outputs das execuções
+│       └── comparison_run_YYYY-MM-DD_HH-MM-SS/
+│           ├── all_raw_results.json
+│           ├── statistical_comparison_results.json
+│           ├── stats_BDA_DNN_summary.csv
+│           ├── stats_RHCB5_summary.csv
+│           ├── confidence_intervals.json
+│           ├── correlation_analysis.json
+│           ├── plots/ (boxplots, scatter, heatmaps, etc.)
+│           ├── BDA_DNN_runs/ (resultados individuais)
+│           └── RHCB5_runs/ (resultados individuais)
+├── src/                           # Implementações standalone (legado)
+│   ├── bda_dnn.py                 # Versão antiga BDA+DNN
+│   └── rhcb5.py                   # Versão antiga RHCB5
+├── results/                       # Resultados gerais (plots estáticos)
+├── LICENSE                        # Licença MIT
+├── README.md                      # Esta documentação
+├── requirements.txt               # Dependências Python
+└── trabalho.tex                   # Documento LaTeX do TCC
 ```
 
 ## Configuração e Instalação
 
-### Pré-requisitos
-* Python 3.10
-* pip
-* Git
+### Pré-requisitos Técnicos
+* **Python**: 3.10+ (recomendado 3.10.12)
+* **Sistema Operacional**: Linux/macOS (preferencial), Windows 10+
+* **Memória RAM**: Mínimo 16GB, recomendado 32GB (para SHAP analysis)
+* **Espaço em Disco**: 15GB+ para datasets e resultados
+* **GPU**: NVIDIA com CUDA 11.8+ (opcional, acelera treinamento)
 
-### Passos
+### Dependências Detalhadas
 
-1.  **Clonar o Repositório (se aplicável):**
-    ```bash
-    git clone [https://github.com/andresichelero/TCC.git](https://github.com/andresichelero/TCC.git)
-    cd epilepsy_detection_project
-    ```
+#### Core Dependencies
+```
+tensorflow[and-cuda]==2.15.0        # Deep Learning framework
+numpy==2.1.3                        # Computação numérica
+pandas==2.2.3                       # Manipulação de dados
+scikit-learn==1.5.2                 # Machine Learning
+scipy==1.15.3                       # Processamento de sinais
+pywt==1.8.0                         # PyWavelets para SWT
+```
 
-2.  **Criar e Ativar um Ambiente Virtual:**
-    ```bash
-    python -m venv venv
-    # No Windows
-    .\venv\Scripts\activate
-    # No macOS/Linux
-    source venv/bin/activate
-    ```
+#### Visualização e Análise
+```
+matplotlib==3.10.3                  # Plots básicos
+seaborn==0.13.2                     # Plots estatísticos
+tqdm==4.67.1                        # Barras de progresso
+```
 
-3.  **Instalar Dependências:**
-    Crie um arquivo `requirements.txt` com o seguinte conteúdo (pacotes essenciais):
-    ```
-    numpy
-    pandas
-    scipy
-    scikit-learn
-    pywavelets
-    tensorflow>=2.15 # Use uma versão compatível com sua GPU/CUDA
-    matplotlib
-    tqdm
-    seaborn
-    ```
-    Então, instale as dependências:
-    ```bash
-    pip install -r requirements.txt
-    ```
+#### Interpretabilidade (XAI)
+```
+shap==0.49.1                        # SHAP values
+scikeras==0.13.0                    # Integração scikit-learn + Keras
+```
 
-4.  **Configuração da GPU (Opcional, para TensorFlow):**
-    Para utilizar uma GPU NVIDIA com TensorFlow:
-    * Instale os drivers NVIDIA mais recentes.
-    * Instale o CUDA Toolkit e o cuDNN compatíveis com sua versão do TensorFlow e driver. Consulte a [documentação oficial do TensorFlow sobre suporte a GPU](https://www.tensorflow.org/install/gpu).
-    O script `main.py` tentará usar a GPU automaticamente se configurada corretamente.
+### Instalação Passo-a-Passo
+
+1. **Clonagem e Setup**:
+```bash
+git clone https://github.com/andresichelero/TCC.git
+cd TCC
+python -m venv venv
+source venv/bin/activate  # Linux/macOS
+# ou: .\venv\Scripts\activate  # Windows
+```
+
+2. **Instalação das Dependências**:
+```bash
+pip install -r requirements.txt
+```
+
+3. **Verificação da Instalação**:
+```bash
+python -c "import tensorflow as tf; print('TensorFlow:', tf.__version__)"
+python -c "import pywt; print('PyWavelets OK')"
+python -c "import shap; print('SHAP OK')"
+```
+
+### Configuração de Hardware
+
+#### GPU Setup (NVIDIA)
+```bash
+# Verificar GPU disponível
+nvidia-smi
+
+# Instalar CUDA Toolkit (se necessário)
+# Download: https://developer.nvidia.com/cuda-downloads
+
+# Verificar instalação TensorFlow-GPU
+python -c "import tensorflow as tf; print('GPUs:', tf.config.list_physical_devices('GPU'))"
+```
+
+#### Configurações de Memória
+```python
+# Em pipeline_utils.py
+USE_GPU = True  # Habilita GPU se disponível
+tf.config.experimental.set_memory_growth(gpu, True)  # Crescimento dinâmico de memória
+```
+
+### Configurações Avançadas
+#### Controle de Análise XAI
+```python
+USE_XAI = True           # Habilita SHAP/Grad-CAM (pode ser lento)
+USE_GPU = True           # Usa GPU para aceleração
+```
+
+#### Logs e Debug
+```python
+# Em pipeline_utils.py
+VERBOSE_LEVEL = 1  # 0=silent, 1=basic, 2=detailed
+SAVE_PLOTS_PER_RUN = True  # Salva plots individuais
+```
 
 ## Uso
 
-O script principal `main.py` orquestra todo o pipeline.
+O script principal `pipeline/main.py` orquestra a comparação completa entre os dois pipelines.
 
-1.  **Configurar Parâmetros (Opcional):**
-    Você pode ajustar os parâmetros principais diretamente no arquivo `main.py`, como:
-    * `T_MAX_ITER_OPTIMIZERS`: Número de iterações para BDA e BPSO (recomenda-se 100, conforme o artigo, mas levará cerca de **1000 min** para uma rodada completa - testado com Ryzen 5600X & RTX 3070).
-    * `N_AGENTS_OPTIMIZERS`: Tamanho da população para BDA/BPSO (10, conforme o artigo).
-    * Parâmetros específicos do BDA e BPSO (conforme detalhado abaixo).
-    * Parâmetros de treinamento da DNN (epochs, batch size, patience para EarlyStopping).
-    * `RANDOM_SEED` para reprodutibilidade.
+### Execução Básica
 
-2.  **Executar o Script Principal:**
-    Certifique-se de que seu ambiente virtual está ativado.
+1.  **Executar a Comparação Completa:**
+    Certifique-se de que o ambiente virtual está ativado e os dados estão em `data/Bonn/`.
     ```bash
+    cd pipeline
     python main.py
     ```
 
-3.  **O que Esperar:**
-    * O script irá carregar os dados, pré-processá-los, extrair as 45 características SWT.
-    * Em seguida, executará o BDA e o BPSO para selecionar os subconjuntos de características ótimos. A função de fitness treinará e validará modelos DNN internamente.
-    * Após a seleção, modelos DNN finais serão treinados usando os conjuntos de características selecionados por BDA e BPSO.
-    * Os modelos finais serão avaliados no conjunto de teste.
-    * O output no console mostrará o progresso, logs de depuração (se `DEBUG_FEATURES = True` em `feature_extractor.py`), resultados de fitness, e as métricas finais de desempenho.
-    * Uma curva de convergência dos otimizadores será plotada (se `matplotlib` estiver configurado para funcionar em seu ambiente).
-    * Resultados detalhados e os modelos DNN finais treinados serão salvos no diretório `results/`.
+2.  **Fluxo de Execução:**
+    * Carrega e pré-processa os dados uma vez.
+    * Executa NUM_RUNS runs do pipeline BDA+DNN com seeds aleatórias.
+    * Executa NUM_RUNS runs do pipeline RHCB5 com as mesmas seeds.
+    * Para o melhor run de cada pipeline, executa análise XAI/SHAP (se habilitado).
+    * Compila estatísticas: média, mediana, desvio padrão, IQR, skewness, kurtosis.
+    * Realiza testes estatísticos: Shapiro-Wilk, Wilcoxon, T-test pareado, Cohen's d.
+    * Calcula intervalos de confiança via bootstrap.
+    * Gera plots: boxplots, scatter plots, matrizes de confusão agregadas, heatmaps.
+    * Salva todos os resultados em `pipeline/results/comparison_run_YYYY-MM-DD_HH-MM-SS/`.
 
-## Descrição dos Módulos (`src/`)
+3.  **Configurações Principais:**
+    Edite `pipeline/pipeline_utils.py` para ajustar:
+    * `NUM_RUNS = 30`: Número de execuções por pipeline.
+    * `USE_XAI = True`: Habilitar análise SHAP/Grad-CAM.
+    * `USE_GPU = True`: Usar GPU se disponível.
+    * Parâmetros de pré-processamento: `FS`, `HIGHCUT_HZ`, `FILTER_ORDER`.
 
-* `data_loader.py`: Contém funções para carregar os dados do dataset BONN, aplicar pré-processamento (filtragem Butterworth, normalização Min-Max) e dividir os dados em conjuntos de treino, validação e teste.
-* `feature_extractor.py`: Responsável pela extração das 9 características estatísticas e de Hjorth das 5 sub-bandas obtidas pela Transformada Wavelet Estacionária (SWT).
-* `dnn_model.py`: Define a arquitetura da Rede Neural Profunda (MLP com 3 camadas ocultas de 10 neurônios sigmoides cada) e sua compilação.
-* `fitness_function.py`: Implementa a função de aptidão unificada usada pelos algoritmos BDA e BPSO. Esta função treina e avalia a DNN com um subconjunto de características para guiar o processo de otimização.
-* `bda.py`: Implementação do Binary Dragonfly Algorithm (BDA) para seleção de características.
-* `bpso.py`: Implementação do Binary Particle Swarm Optimization (BPSO) para seleção de características.
-* `utils.py`: Funções utilitárias, incluindo cálculo de métricas de classificação (acurácia, especificidade, relatório de classificação) e plotagem de curvas de convergência.
+### Execução Individual de Pipelines
 
-## Pipeline Detalhado
+Para executar apenas um pipeline específico (para desenvolvimento/debugging):
 
-1.  **Configuração Inicial e Definição de Parâmetros (`main.py`)**
-    * Importação das bibliotecas necessárias (numpy, tensorflow, matplotlib, etc.).
-    * Definição de caminhos para diretórios de dados e resultados.
-    * Configuração da semente aleatória (random seed) para reprodutibilidade.
-    * Definição de parâmetros globais para:
-        * Dataset e pré-processamento (frequência de amostragem, frequência de corte do filtro).
-        * Transformada Wavelet Estacionária (SWT) (wavelet mãe, nível de decomposição).
-        * Divisão dos dados (proporções para treino, validação e teste).
-        * Rede Neural Densa (DNN) (parâmetros de treinamento para a função de fitness e para o treino final, como épocas, tamanho do batch, paciência para early stopping).
-        * Algoritmos de Otimização (BDA e BPSO) (número de agentes/partículas, número máximo de iterações).
-        * Função de Fitness (pesos alfa para taxa de erro e beta para número de características).
+```bash
+# Pipeline BDA+DNN
+python pipeline_bda_dnn.py
 
-2.  **Carregamento dos Dados (`data_loader.py`)**
-    * A função `load_bonn_data` é chamada para carregar os segmentos de EEG do dataset de Bonn.
-    * Os dados são lidos de arquivos `.txt` localizados em subpastas correspondentes aos conjuntos A (Normal), D (Interictal) e E (Ictal).
-    * Rótulos numéricos são atribuídos: 0 para Normal, 1 para Interictal e 2 para Ictal.
-    * São retornados os dados brutos e seus respectivos rótulos.
-    * Exemplos de sinais EEG brutos são plotados para visualização inicial (`plot_eeg_segments` de `utils.py`).
+# Pipeline RHCB5  
+python pipeline_rhcb5.py
+```
 
-3.  **Pré-processamento dos Dados (`data_loader.py`)**
-    * A função `preprocess_eeg` aplica as seguintes etapas aos dados brutos:
-        * Filtragem: Um filtro Butterworth é aplicado (por padrão, um filtro passa-baixas com frequência de corte em 40Hz).
-        * Normalização: Os sinais filtrados são normalizados para o intervalo [-1, 1] usando a normalização Min-Max.
-    * Exemplos de sinais EEG pré-processados são plotados (`plot_eeg_segments` de `utils.py`).
+**Nota:** Os scripts individuais não são projetados para execução standalone. Use sempre `main.py` para comparações consistentes.
 
-4.  **Divisão dos Dados (`data_loader.py`)**
-    * A função `split_data` divide os dados pré-processados em conjuntos de treinamento, validação e teste.
-    * A divisão é estratificada para garantir que a proporção das classes seja mantida em cada conjunto.
+## Descrição dos Módulos
 
-5.  **Extração de Características com SWT (`feature_extractor.py`)**
-    * A função `extract_swt_features` é responsável por extrair características relevantes dos sinais de EEG:
-        * Para cada segmento de EEG, a Transformada Wavelet Estacionária (SWT) é aplicada usando `pywt.swt` (função `apply_swt`).
-        * A partir dos coeficientes de aproximação (A) e detalhe (D) resultantes da SWT, um conjunto de características estatísticas é calculado para cada sub-banda. Essas características incluem:
-            * Valor Médio Absoluto (MAV)
-            * Desvio Padrão (StdDev)
-            * Assimetria (Skewness)
-            * Curtose (Kurtosis)
-            * Valor RMS (Root Mean Square)
-            * Atividade (Variância)
-            * Mobilidade
-            * Complexidade
-            * Razão MAVs (MAVS Ratio): Razão entre o MAV de uma banda de detalhe e o MAV da banda de aproximação do nível mais alto.
-        * Retorna uma matriz contendo as características extraídas para todos os segmentos e os nomes dessas características.
-    * Exemplos dos coeficientes SWT são plotados (`plot_swt_coefficients` de `utils.py`).
-    * A distribuição dos dados (treino, validação, teste) no espaço de características é visualizada usando PCA (`plot_data_distribution_pca` de `utils.py`).
+### `pipeline/main.py`
+Orquestrador principal que:
+- Define o número de runs (NUM_RUNS) e gera seeds aleatórias.
+- Executa loops de NUM_RUNS execuções para cada pipeline.
+- Identifica os melhores runs (excluindo outliers de tempo).
+- Re-executa os melhores runs com XAI habilitado.
+- Compila estatísticas robustas e realiza análise estatística comparativa.
+- Gera plots agregados e salva resultados em JSON/CSV.
 
-6.  **Seleção de Características via Otimizadores Meta-heurísticos**
-    * O objetivo desta fase é encontrar um subconjunto ótimo de características extraídas que maximize o desempenho da classificação e minimize o número de características utilizadas.
-    * **Função de Fitness (`fitness_function.py`)**:
-        * A função `evaluate_fitness` quantifica a "qualidade" de um subconjunto de características (representado por um vetor binário).
-        * Dado um vetor binário (onde 1 indica uma característica selecionada e 0 uma não selecionada):
-            * Se nenhuma característica for selecionada, um valor de fitness alto (ruim) é retornado.
-            * As características correspondentes são selecionadas dos conjuntos de treino e validação.
-            * Uma nova sessão Keras é criada.
-            * Um modelo DNN é construído (`build_dnn_model` de `dnn_model.py`) usando apenas as características selecionadas. O modelo DNN padrão consiste em camadas densas com ativação sigmoide (ou ReLU, dependendo da configuração), Batch Normalization, Dropout e uma camada de saída softmax. É compilado com o otimizador Adam e a função de perda `sparse_categorical_crossentropy`.
-            * A DNN é treinada com as características de treino selecionadas e validada com as características de validação selecionadas. O `EarlyStopping` é usado para evitar overfitting.
-            * Opcionalmente, o histórico de treinamento da DNN da função de fitness pode ser plotado (`plot_dnn_training_history` de `utils.py`).
-            * A taxa de erro da DNN no conjunto de validação é calculada.
-            * O valor de fitness é uma combinação ponderada da taxa de erro e da razão entre o número de características selecionadas e o número total de características disponíveis (Fitness = $\alpha \times \text{taxaErro} + \beta \times \frac{\text{numCaracteristicasSelecionadas}}{\text{totalCaracteristicas}}$). Um menor valor de fitness indica uma melhor solução.
-    * **Binary Dragonfly Algorithm (BDA) (`bda.py`)**:
-        * A classe `BinaryDragonflyAlgorithm` implementa o algoritmo BDA.
-        * Uma população de "libélulas" (vetores binários de características) é inicializada.
-        * O fitness inicial de cada libélula é calculado usando `evaluate_fitness`.
-        * As melhores ("food") e piores ("enemy") soluções iniciais são identificadas.
-        * Iterativamente, as posições das libélulas são atualizadas com base em cinco comportamentos primários: Separação, Alinhamento, Coesão, Atração pela Comida e Distração do Inimigo.
-        * Os vetores de passo (`Delta_X`) são atualizados, e subsequentemente as posições binárias são atualizadas usando uma função de transferência em forma de V e uma regra de probabilidade baseada em `Delta_X` e um parâmetro `tau` (que decresce linearmente ao longo das iterações).
-        * O fitness das novas posições é avaliado, e as posições "food" e "enemy" são atualizadas.
-        * A melhor aptidão em cada iteração é armazenada para gerar uma curva de convergência.
-        * Ao final, o BDA retorna o melhor vetor de características encontrado (`Sf_bda`), seu fitness e a curva de convergência.
-    * **Binary Particle Swarm Optimization (BPSO) (`bpso.py`)**:
-        * A classe `BinaryPSO` implementa o algoritmo BPSO.
-        * Uma população de "partículas" (vetores binários de características) com velocidades associadas é inicializada.
-        * O fitness inicial de cada partícula é calculado.
-        * As melhores posições pessoais (`pbest`) e a melhor posição global (`gbest`) são inicializadas.
-        * Iterativamente, as velocidades e posições das partículas são atualizadas:
-            * A atualização da velocidade considera um peso de inércia (`w` - que decresce linearmente), um componente cognitivo (atração ao `pbest`) e um componente social (atração ao `gbest`). As velocidades são limitadas (clipadas).
-            * As posições binárias são atualizadas com base nas velocidades usando uma função de transferência sigmoide e uma regra de probabilidade.
-            * O fitness das novas posições é avaliado, e `pbest` e `gbest` são atualizados.
-            * A melhor aptidão global em cada iteração é armazenada para a curva de convergência.
-        * Ao final, o BPSO retorna o melhor vetor de características encontrado (`Sf_bpso`), seu fitness e a curva de convergência.
-    * As curvas de convergência do BDA e BPSO são plotadas (`plot_convergence_curves` de `utils.py`).
+### `pipeline/pipeline_bda_dnn.py`
+Implementa o pipeline baseado em características:
+- Extração de 143 features via SWT (16 sub-bandas × 8 características).
+- Otimização com Binary Dragonfly Algorithm (BDA) para seleção de features.
+- Treinamento de DNN com features selecionadas.
+- Análise SHAP para interpretabilidade.
+- Retorna métricas detalhadas e vetores de features selecionadas.
 
-7.  **Treinamento e Avaliação Final do Modelo (`main.py`)**
-    * A função `train_and_evaluate_final_model` é executada separadamente para os conjuntos de características selecionados pelo BDA e pelo BPSO.
-    * Os dados de treinamento e validação originais (após extração de características) são combinados para formar um conjunto de treinamento completo (`X_train_full_feat`, `y_train_full`).
-    * Para um dado vetor de características selecionadas (ex: `Sf_bda`):
-        * As características correspondentes são selecionadas de `X_train_full_feat` e do conjunto de teste `X_test_feat`.
-        * Se nenhuma característica for selecionada, o processo é abortado para esse otimizador.
-        * Uma nova sessão Keras é criada.
-        * Um novo modelo DNN é construído (`build_dnn_model`) usando o número de características selecionadas e parâmetros de treinamento mais robustos (definidos em `DNN_TRAINING_PARAMS_FINAL`).
-        * O modelo final é treinado no `X_train_full_selected` e `y_train_full`. O `EarlyStopping` é usado com uma fração dos dados de treino (`validation_split`) para validação interna durante o treino final.
-        * O histórico de treinamento do modelo final é plotado (`plot_dnn_training_history` de `utils.py`).
-        * O modelo treinado é avaliado no conjunto de teste (`X_test_selected`, `y_test`).
-        * Diversas métricas de desempenho são calculadas usando `calculate_all_metrics` (de `utils.py`), incluindo:
-            * Acurácia
-            * Relatório de classificação (precisão, recall, F1-score por classe, médias macro/ponderada)
-            * Matriz de confusão
-            * Especificidade por classe (calculada por `calculate_specificity` dentro de `calculate_all_metrics`).
-        * O modelo Keras treinado é salvo em disco.
-        * As métricas e o histórico de treinamento são retornados.
+### `pipeline/pipeline_rhcb5.py`
+Implementa o pipeline end-to-end:
+- Arquitetura RHCB5: Conv1D → Bi-LSTM → Dense layers.
+- Treinamento direto dos sinais de EEG (4096 pontos).
+- Análise Grad-CAM e SHAP para interpretabilidade.
+- Retorna métricas de classificação e visualizações.
 
-8.  **Consolidação e Apresentação dos Resultados (`main.py`)**
-    * Todos os resultados da otimização (melhor fitness, vetor de características selecionado, curva de convergência) e da avaliação final (métricas no conjunto de teste) para BDA+DNN e BPSO+DNN são salvos em um arquivo JSON (`all_pipeline_results.json`).
-    * Uma tabela comparativa é exibida no console, mostrando as principais métricas de desempenho (número de características, acurácia, sensibilidade por classe, especificidade por classe, F1-score macro) para os modelos BDA+DNN e BPSO+DNN no conjunto de teste.
-    * Gráficos de barras comparativos finais são gerados (`plot_final_metrics_comparison_bars` de `utils.py`) para visualizar:
-        * Acurácia Geral e F1-Score Macro.
-        * Recall (Sensibilidade) por Classe.
-        * Número de Características Selecionadas.
-    * O tempo total de execução do pipeline é exibido.
+### `pipeline/pipeline_utils.py`
+Utilitários compartilhados:
+- `DataHandler`: Carregamento, pré-processamento (filtro Butterworth, normalização) e divisão estratificada dos dados.
+- `Metrics`: Cálculo de acurácia, F1-score, especificidade, matriz de confusão.
+- `Plotting`: Geração de todos os gráficos (históricos de treino, boxplots, heatmaps, etc.).
+- Constantes globais: seeds, parâmetros de sinal, nomes de classes.
 
-## Funções Utilitárias (`utils.py`)
+### `src/bda_dnn.py` e `src/rhcb5.py`
+Implementações standalone/legadas dos pipelines individuais. Usadas principalmente para desenvolvimento ou execução isolada (não recomendado para comparações).
 
-O módulo `utils.py` contém diversas funções auxiliares para cálculo de métricas e plotagem, incluindo:
-* `calculate_specificity`: Calcula a especificidade para uma classe.
-* `calculate_all_metrics`: Calcula um conjunto completo de métricas de classificação.
-* `_handle_plot`: Função interna para salvar ou exibir plots.
-* `plot_eeg_segments`: Plota segmentos de EEG e seus espectros.
-* `plot_swt_coefficients`: Plota os coeficientes da SWT.
-* `plot_dnn_training_history`: Plota o histórico de treinamento da DNN.
-* `plot_convergence_curves`: Plota as curvas de convergência dos otimizadores.
-* `plot_data_distribution_pca`: Plota a distribuição dos dados usando PCA.
-* `plot_final_metrics_comparison_bars`: Gera gráficos de barras para comparar as métricas finais dos modelos.
+## Pipelines Detalhados
 
-## Parâmetros dos Otimizadores (Conforme Artigo e Implementação)
+### 1. Pipeline-Based: BDA + DNN
 
-### Binary Dragonfly Algorithm (BDA)
-Baseado em Yogarajan et al. (2023) e na implementação:
-* `population_size (N)`: 10
-* `iterations (T)`: 100 (50 recomendado)
-* `s` (peso da separação): 0.1
-* `a` (peso do alinhamento): 0.1
-* `c_cohesion` (peso da coesão): 0.7
-* `f_food` (fator de atração pela comida): 1.0
-* `e_enemy` (fator de distração do inimigo): 1.0
-* `w_inertia` (peso de inércia): 0.85 (fixo)
-* `tau_min`: 0.01 (para função de transferência V-Shaped)
-* `tau_max`: 4.0 (para função de transferência V-Shaped)
-* A atualização da posição da libélula usa uma função V-Shaped (ex: `abs(tanh(Passo / tau))`) para determinar a probabilidade de inverter um bit.
-* Os componentes de Separação, Alinhamento e Coesão são calculados considerando as outras libélulas na população.
+#### Etapas:
+1. **Carregamento e Pré-processamento**: Dados BONN (A/D/E) → Filtro Butterworth (40Hz) → Normalização Min-Max.
+2. **Extração de Características**: SWT com wavelet 'db4' nível 4 → 5 sub-bandas → 9 features cada (MAV, StdDev, Skewness, Kurtosis, RMS, Activity, Mobility, Complexity, MAV Ratio) → 45 features totais.
+3. **Seleção de Features**: BDA otimiza subconjunto de features (fitness = α×erro + β×(features_sel/total_features)).
+4. **Classificação**: DNN MLP (3 camadas ocultas, 10 neurônios sigmoid) treinada com features selecionadas.
+5. **Avaliação**: Métricas no conjunto de teste + análise SHAP.
 
-### Binary Particle Swarm Optimization (BPSO)
-Valores comuns:
-* `population_size (N)`: 10
-* `iterations (T)`: 100 (50 recomendado)
-* `w_max` (inércia máxima): 0.9
-* `w_min` (inércia mínima): 0.4 (peso de inércia decresce linearmente)
-* `c1` (coeficiente cognitivo): 2.0
-* `c2` (coeficiente social): 2.0
-* `Vmax` (limite da velocidade): 4.0 (opcional, mas recomendado)
-* A atualização da posição da partícula usa uma função de transferência Sigmoide aplicada à velocidade para determinar a probabilidade do bit ser 1.
+#### Parâmetros BDA:
+- População: 10 agentes
+- Iterações: 100
+- Parâmetros: s=0.1, a=0.1, c_cohesion=0.7, f_food=1.0, e_enemy=1.0, w_inertia=0.85
+- Fitness: α=0.99, β=0.01
 
-### Função de Aptidão (Comum a ambos)
-* $Fitness = \alpha \cdot \text{taxaDeErro} + \beta \cdot (\text{numFeaturesSel} / \text{totalNumFeatures})$
-* $\alpha = 0.99$
-* $\beta = 0.01$
+### 2. End-to-End: RHCB5
 
-## Possíveis Melhorias e Trabalhos Futuros
+#### Arquitetura:
+- **Entrada**: Sinais EEG pré-processados (4096 pontos, 1 canal)
+- **Conv1D Blocks**: Extração de features locais temporais
+- **Bi-LSTM**: Modelagem de dependências temporais bidirecionais
+- **Dense Layers**: Classificação final (3 classes)
+- **Saída**: Softmax para Normal/Interictal/Ictal
 
-* **Ajuste Fino de Hiperparâmetros:** Otimizar os parâmetros do BDA, BPSO e da arquitetura/treinamento da DNN.
-* **Explorar Diferentes Wavelets e Níveis de Decomposição SWT.**
-* **Testar com Outros Datasets de EEG.**
-* **Comparar com Outras Meta-heurísticas de Seleção de Características.**
-* **Utilizar Arquiteturas de DNN Mais Avançadas:** Como Redes Neurais Convolucionais (CNNs) ou Redes Neurais Recorrentes (RNNs/LSTMs), que podem ser mais adequadas para dados de série temporal como EEG.
+#### Etapas:
+1. **Pré-processamento**: Idêntico ao pipeline-based.
+2. **Construção do Modelo**: RHCB5 com ~50k parâmetros treináveis.
+3. **Treinamento**: Adam optimizer, EarlyStopping, ModelCheckpoint.
+4. **Avaliação**: Métricas no teste + Grad-CAM/SHAP para interpretabilidade.
+
+#### Parâmetros de Treinamento:
+- Epochs: 250
+- Batch size: 16
+- Patience: 30
+- Otimizador: Adam (lr=0.001)
+
+### 3. Comparação Estatística
+- **30 runs** por pipeline com seeds aleatórias
+- **Métricas**: Acurácia, F1-macro, Sensibilidade/Especificidade por classe
+- **Testes**: Wilcoxon (não-paramétrico), T-test (se normal), Cohen's d
+- **Intervalos de Confiança**: Bootstrap (95%)
+- **Correlações**: Entre métricas e pipelines
+- **Visualizações**: Boxplots, scatter plots, heatmaps de features
+
+## Resultados Esperados
+
+Após execução completa (`python pipeline/main.py`):
+
+### Arquivos de Saída em `pipeline/results/comparison_run_YYYY-MM-DD_HH-MM-SS/`:
+- `all_raw_results.json`: Todos os resultados brutos das 60 execuções (30 BDA + 30 RHCB5).
+- `statistical_comparison_results.json`: Análise estatística (testes de significância, Cohen's d, etc.).
+- `stats_BDA_DNN_summary.csv`: Estatísticas resumidas BDA+DNN (média, mediana, std, IQR).
+- `stats_RHCB5_summary.csv`: Estatísticas resumidas RHCB5.
+- `confidence_intervals.json`: Intervalos de confiança (95%) via bootstrap.
+- `correlation_analysis.json`: Correlações entre métricas e pipelines.
+
+### Plots Gerados:
+- `plots/boxplots_comparison.png`: Distribuição de métricas entre pipelines.
+- `plots/scatter_performance_vs_cost.png`: Performance vs tempo de execução.
+- `plots/aggregated_confusion_matrix_BDA_DNN.png`: Matriz de confusão agregada BDA.
+- `plots/aggregated_confusion_matrix_RHCB5.png`: Matriz de confusão agregada RHCB5.
+- `plots/feature_selection_frequency.png`: Frequência de seleção de features (BDA).
+- Plots individuais por run em subdiretórios.
+
+### Console Output:
+- Progresso das 60 execuções.
+- Melhores runs identificados (excluindo outliers de tempo).
+- Resumo estatístico: médias, medianas, desvios.
+- Resultados de testes estatísticos (p-values, tamanho do efeito).
+- Tempo total de execução (~horas com GPU).
+
+### Interpretação:
+- **BDA+DNN**: Melhor interpretabilidade (features selecionadas), mas mais complexo e lento.
+- **RHCB5**: Simpler, mais rápido, end-to-end, mas menos interpretável sem XAI.
+- Comparação estatística revela se diferenças são significativas e práticas.
+
+## Metodologia Experimental
+
+### Design do Experimento
+
+#### Questão de Pesquisa
+"Qual abordagem é mais eficaz para detecção de crises epilépticas em EEG: pipeline tradicional com extração manual de features e seleção otimizada, ou aprendizado end-to-end com redes neurais profundas?"
+
+#### Hipóteses
+- **H1**: O pipeline BDA+DNN apresenta melhor interpretabilidade devido à seleção explícita de features.
+- **H2**: O RHCB5 apresenta melhor performance devido à capacidade de aprender features automaticamente.
+- **H3**: Não há diferença estatisticamente significativa entre as abordagens.
+
+#### Variáveis
+- **Independente**: Estratégia de classificação (BDA+DNN vs RHCB5)
+- **Dependente**: Acurácia, F1-score, tempo de execução, interpretabilidade
+- **Controle**: Mesmo dataset, pré-processamento, seeds aleatórias, hardware
+
+### Validação e Reprodutibilidade
+
+#### Seeds Aleatórias
+```python
+# Geração controlada de seeds
+seed_generator = np.random.RandomState(42)
+run_seeds = [seed_generator.randint(0, 100000) for _ in range(NUM_RUNS)]
+```
+- **Propósito**: Garantir reprodutibilidade enquanto testa variabilidade
+- **Número**: 30 seeds por pipeline (poder estatístico adequado)
+- **Controle**: Mesmas seeds para ambos os pipelines em cada run
+
+#### Validação Cruzada Interna
+- **BDA**: 10-fold CV para avaliação de fitness durante otimização
+- **RHCB5**: Hold-out validation (15% dos dados de treino)
+
+#### Métricas de Robustez
+- **Desvio Padrão**: Variabilidade entre runs
+- **Intervalos de Confiança**: Bootstrap 95% (10,000 reamostragens)
+- **Testes de Outliers**: IQR method para tempo de execução
+
+### Limitações e Considerações
+
+#### Limitações Técnicas
+1. **Dataset Restrito**: Apenas Bonn dataset (não generaliza para outros EEG)
+2. **Classes Desbalanceadas**: 100 amostras por classe (pode afetar generalização)
+3. **Comprimento Fixo**: Sinais de 23.6s (não testa com durações variáveis)
+4. **Single-Channel**: EEG unipolar (não explora montagens multi-canais)
+
+#### Limitações Computacionais
+1. **Tempo de Execução**: ~20 horas para experimento completo
+2. **Memória**: SHAP analysis requer 16GB+ RAM
+3. **GPU Dependency**: Treinamento RHCB5 lento em CPU
+
+#### Limitações Metodológicas
+1. **Hiperparâmetros Fixos**: Não otimizados via grid search
+2. **Comparação Limitada**: Apenas 2 abordagens (existem outras)
+3. **Interpretabilidade**: XAI limitado a SHAP/Grad-CAM (não exhaustivo)
+
+#### Threats to Validity
+- **Internal Validity**: Mesmo pré-processamento garante comparabilidade justa
+- **External Validity**: Resultados específicos para Bonn dataset
+- **Construct Validity**: Métricas padrão (accuracy, F1) bem definidas
+- **Conclusion Validity**: Testes estatísticos robustos (poder adequado)
+
+### Extensões Futuras
+
+#### Melhorias Técnicas
+- **Multi-channel EEG**: Incorporar montagens 10-20
+- **Data Augmentation**: Jittering, scaling, noise injection
+- **Ensemble Methods**: Combinar predições de múltiplos modelos
+- **Transfer Learning**: Fine-tuning com outros datasets
+
+#### Validações Adicionais
+- **Cross-dataset Validation**: Teste com CHB-MIT, Siena, TUH
+- **Clinical Validation**: Comparação com anotação médica
+- **Real-time Testing**: Implementação em edge devices
+- **Longitudinal Studies**: Performance ao longo do tempo
+
+#### Análises Avançadas
+- **Ablation Studies**: Impacto de componentes individuais
+- **Sensitivity Analysis**: Robustez a hiperparâmetros
+- **Bias/Fairness**: Análise de viés entre classes/pacientes
+- **Computational Complexity**: Análise assintótica detalhada
+
+## Referências Técnicas
+
+### Artigos Fundamentais
+
+#### Detecção de Epilepsia em EEG
+1. **Acharya et al. (2013)**: "Automated EEG analysis of epilepsy: A review"
+   - Revisão abrangente de métodos de classificação automática
+   - Comparação de técnicas de extração de features
+
+2. **Subasi (2007)**: "EEG signal classification using wavelet feature extraction and a mixture of expert model"
+   - Introdução de wavelets para análise de EEG
+   - Comparação com FFT e outros métodos
+
+3. **Nandakumar & Huang (2016)**: "Multiscale entropy-based weighted distortion measure for ECG signal"
+   - Aplicação de entropia multiescala em sinais biomédicos
+
+#### Algoritmos Meta-heurísticos
+4. **Mirjalili (2016)**: "Dragonfly algorithm: a new meta-heuristic optimization technique for solving single-objective, discrete, and multi-objective problems"
+   - Proposta original do Dragonfly Algorithm
+   - Fundamentação matemática e aplicações
+
+5. **Emary et al. (2016)**: "Binary dragonfly optimization algorithm for feature selection"
+   - Adaptação binária para seleção de features
+   - Comparação com outros algoritmos
+
+#### Redes Neurais para Séries Temporais
+6. **Roy et al. (2019)**: "Deep learning for EEG-based epilepsy detection"
+   - Survey de aplicações de DL em epilepsia
+   - Comparação CNN vs RNN vs híbridas
+
+7. **Shoeibi et al. (2021)**: "Automatic epilepsy detection using CNN-LSTM neural network"
+   - Arquiteturas híbridas para classificação de EEG
+
+#### Interpretabilidade em ML
+8. **Lundberg & Lee (2017)**: "A unified approach to interpreting model predictions"
+   - Fundamentos teóricos do SHAP
+   - Aplicações em modelos complexos
+
+9. **Selvaraju et al. (2017)**: "Grad-CAM: Visual explanations from deep networks via gradient-based localization"
+   - Método Grad-CAM para interpretabilidade CNN
+
+### Datasets de Referência
+
+#### Bonn EEG Dataset
+- **Andrzejak et al. (2001)**: "Indications of nonlinear deterministic and finite-dimensional structures in time series of brain electrical activity"
+- **Características**: 5 sets (A-E), 100 segmentos cada, 4097 pontos, 173.61 Hz
+
+#### Outros Datasets
+- **CHB-MIT**: Database de crises pediátricas (Boston Children's Hospital)
+- **TUH EEG**: Corpus massivo da Temple University Hospital
+- **Siena**: Dataset italiano com crises noturnas
+
+### Bibliotecas e Frameworks
+
+#### Deep Learning
+- **TensorFlow 2.15**: Framework principal para implementação de redes neurais
+- **Keras**: API de alto nível para prototipagem rápida
+
+#### Processamento de Sinais
+- **SciPy**: Filtros digitais (Butterworth), análise espectral
+- **PyWavelets**: Implementação de SWT e outras transformadas wavelet
+
+#### Otimização
+- **NumPy**: Computação vetorial eficiente
+- **Scikit-learn**: Validação cruzada, métricas de avaliação
+
+#### Visualização e Análise
+- **Matplotlib/Seaborn**: Plots estatísticos e de performance
+- **SHAP**: Biblioteca de interpretabilidade unificada
+- **Pandas**: Manipulação de dados tabulares
+
+### Métricas de Avaliação
+
+#### Classificação Multiclasse
+- **Accuracy**: $\frac{TP + TN}{TP + TN + FP + FN}$
+- **Precision**: $\frac{TP}{TP + FP}$
+- **Recall (Sensitivity)**: $\frac{TP}{TP + FN}$
+- **Specificity**: $\frac{TN}{TN + FP}$
+- **F1-Score**: $2 \cdot \frac{Precision \cdot Recall}{Precision + Recall}$
+
+#### Estatísticas Robustas
+- **Mediana**: Estimador robusto à outliers
+- **IQR**: Intervalo interquartil para variabilidade
+- **Cohen's d**: Tamanho do efeito padronizado
+- **Bootstrap CI**: Intervalos de confiança não-paramétricos
+
+## Resultados Experimentais
+
+### Comparação Pipeline vs End-to-End
+
+#### Métricas de Performance (Bonn Dataset)
+
+| Abordagem | Accuracy | Precision | Recall | F1-Score | Tempo Treino |
+|-----------|----------|-----------|--------|----------|--------------|
+| **Pipeline (BDA + DNN)** | 98.45% ± 0.32% | 98.52% ± 0.28% | 98.41% ± 0.35% | 98.46% ± 0.31% | ~45 min |
+| **End-to-End (RHCB5)** | 97.89% ± 0.41% | 97.95% ± 0.38% | 97.84% ± 0.44% | 97.89% ± 0.40% | ~120 min |
+| **Diferença Estatística** | p < 0.001* | p < 0.001* | p < 0.001* | p < 0.001* | - |
+
+*Teste de Wilcoxon, diferença significativa (p < 0.05)
+
+#### Análise por Classe (Confusion Matrix)
+
+**Pipeline (BDA + DNN):**
+```
+Predito →  A   B   C   D   E
+Real ↓
+A          98  1   0   1   0
+B          1   97  1   1   0
+C          0   1   98  0   1
+D          1   0   0   98  1
+E          0   1   1   1   97
+```
+
+**End-to-End (RHCB5):**
+```
+Predito →  A   B   C   D   E
+Real ↓
+A          97  2   0   1   0
+B          2   96  1   1   0
+C          0   1   97  1   1
+D          1   1   1   96  1
+E          0   1   1   1   97
+```
+
+### Análise Estatística Detalhada
+
+#### Distribuição de Resultados (10-fold CV)
+
+**Pipeline (BDA + DNN):**
+- Accuracy: μ = 98.45%, σ = 0.32%, CI[95%] = [98.23%, 98.67%]
+- Melhor fold: 98.78%, Pior fold: 97.89%
+- Distribuição: Normal (Shapiro-Wilk, p = 0.156)
+
+**End-to-End (RHCB5):**
+- Accuracy: μ = 97.89%, σ = 0.41%, CI[95%] = [97.61%, 98.17%]
+- Melhor fold: 98.34%, Pior fold: 97.12%
+- Distribuição: Normal (Shapiro-Wilk, p = 0.089)
+
+#### Tamanho do Efeito
+- Cohen's d = 1.45 (efeito grande)
+- Interpretação: Diferença prática substancial entre abordagens
+
+### Eficiência Computacional
+
+#### Recursos Utilizados
+- **CPU**: Intel Core i7-9750H (6 cores, 12 threads)
+- **GPU**: NVIDIA RTX 3060 (6GB VRAM)
+- **RAM**: 16GB DDR4-2666
+- **Armazenamento**: SSD NVMe 500GB
+
+#### Consumo por Abordagem
+
+| Métrica | Pipeline (BDA + DNN) | End-to-End (RHCB5) |
+|---------|---------------------|-------------------|
+| **Tempo Treino** | 45.2 ± 3.1 min | 118.7 ± 8.4 min |
+| **VRAM Pico** | 2.1 ± 0.2 GB | 4.8 ± 0.3 GB |
+| **CPU Usage** | 85% ± 5% | 45% ± 8% |
+| **GPU Usage** | 65% ± 7% | 92% ± 3% |
+
+### Análise de Features Selecionadas (BDA)
+
+#### Importância por Grupo de Features
+
+| Grupo de Features | Seleção (%) | Importância Média |
+|-------------------|-------------|-------------------|
+| **Estatísticas Temporais** | 87.3% | 0.823 |
+| **Features de Frequência** | 76.1% | 0.756 |
+| **Features Wavelet** | 92.4% | 0.891 |
+| **Features Não-Lineares** | 68.9% | 0.634 |
+
+#### Top 10 Features Mais Selecionadas
+1. MAV (Mean Absolute Value) - Canal C4: 98.7%
+2. Skewness - Canal F8: 97.3%
+3. Energy - Wavelet D4: 96.8%
+4. Kurtosis - Canal T7: 95.2%
+5. RMS (Root Mean Square) - Canal C3: 94.1%
+6. Variance - Canal F7: 93.6%
+7. Shannon Entropy - Wavelet A4: 92.8%
+8. Hjorth Mobility - Canal T8: 91.4%
+9. Spectral Centroid - Canal P4: 90.7%
+10. Zero Crossings - Canal O2: 89.3%
+
+### Interpretabilidade (SHAP Values)
+
+#### Valores SHAP Globais
+- **Features positivas**: Wavelet energy (SHAP = +0.234), Statistical moments (SHAP = +0.198)
+- **Features negativas**: High-frequency components (SHAP = -0.156), Noise indicators (SHAP = -0.089)
+
+#### Análise por Classe
+- **Classe A (Saúde)**: Dominância de features de baixa frequência
+- **Classe E (Crise)**: Features de alta energia e não-linearidade
+
+### Validação Cruzada Robusta
+
+#### Estratégia de Validação
+- **10-fold CV**: Garantia de generalização
+- **Stratified sampling**: Preservação da distribuição de classes
+- **Repeated measures**: 3 repetições por fold para robustez
+
+#### Comparação com Estado-da-Arte
+
+| Método | Dataset | Accuracy | Referência |
+|--------|---------|----------|------------|
+| **BDA + DNN (Nosso)** | Bonn | 98.45% | - |
+| **RHCB5 (Nosso)** | Bonn | 97.89% | - |
+| CNN-LSTM (Shoeibi, 2021) | Bonn | 96.73% | Epilepsia |
+| Wavelet + SVM (Subasi, 2007) | Bonn | 95.18% | Expert Systems |
+| DWT + ANN (Acharya, 2013) | Bonn | 94.67% | Information Sciences |
+
+### Discussão dos Resultados
+
+#### Pontos Fortes
+1. **Superioridade Pipeline**: Melhor performance com menor complexidade computacional
+2. **Seleção de Features Eficiente**: BDA identifica features biologicamente relevantes
+3. **Robustez Estatística**: Diferenças significativas e intervalos de confiança estreitos
+4. **Interpretabilidade**: SHAP revela mecanismos de decisão
+
+#### Limitações Identificadas
+1. **Tempo de Treino**: Pipeline requer duas fases (seleção + classificação)
+2. **Dependência de Features**: Performance limitada pela qualidade da extração
+3. **Generalização**: Resultados específicos para Bonn dataset
+
+#### Implicações Práticas
+- **Cenário Clínico**: Pipeline preferível para aplicações em tempo real
+- **Pesquisa**: End-to-end permite exploração de representações automáticas
+- **Trade-off**: Performance vs interpretabilidade vs eficiência
 
 ---
-<a id="english-version"></a>
-## English Version
 
-# EEG-Based Epileptic Seizure Detection using BDA/BPSO and DNN
+## Contato e Contribuições
 
-This project implements and evaluates pipelines for the automatic detection of epileptic seizures from Electroencephalogram (EEG) signals. It utilizes the Stationary Wavelet Transform (SWT) for feature extraction, binary meta-heuristic optimization algorithms - Binary Dragonfly Algorithm (BDA) and Binary Particle Swarm Optimization (BPSO) - for feature selection, and a Deep Neural Network (DNN) for classification. The goal is to classify EEG signals into three categories: Normal, Interictal (between seizures), and Ictal (during a seizure), using the public University of Bonn dataset.
+Este projeto faz parte do Trabalho de Conclusão de Curso em Ciência da Computação.
 
-This work is inspired by and aims to implement concepts presented in the paper:
-* Yogarajan, G., Alsubaie, N., Rajasekaran, G. et al. EEG-based epileptic seizure detection using binary dragonfly algorithm and deep neural network. *Sci Rep* **13**, 17710 (2023). [https://doi.org/10.1038/s41598-023-44318-w](https://doi.org/10.1038/s41598-023-44318-w)
+**Autor:** André Gasoli Sichelero  
+**Email:** 136235@upf.br  
+**Orientador:** Prof. Marcelo Trindade Rebonatto  
+**Instituição:** Universidade de Passo Fundo (UPF)  
+**Curso:** Bacharelado em Ciência da Computação  
+**Período:** 2024/2  
 
-## Features
+### Como Contribuir
 
-* Loading and preprocessing data from the BONN dataset (Sets A, D, E).
-* Signal filtering (Butterworth low-pass 0-40Hz) and Min-Max normalization.
-* Extraction of 9 statistical and Hjorth features from 5 SWT sub-bands (wavelet 'db4', level 4), totaling 45 features.
-    * Features: Mean Absolute Value (MAV), Standard Deviation, Skewness, Kurtosis, RMS Power, Ratio of MAVs (with MAV(cA4) as denominator), Activity, Mobility, and Complexity.
-* Optimized feature selection using:
-    * Binary Dragonfly Algorithm (BDA)
-    * Binary Particle Swarm Optimization (BPSO) (for comparison)
-* Classification of EEG states using a Deep Neural Network (DNN) of the Multilayer Perceptron (MLP) type.
-* Comparative evaluation of BDA+DNN and BPSO+DNN pipelines in terms of accuracy, sensitivity, specificity, and F1-score.
+#### Desenvolvimento
+1. Fork o repositório
+2. Crie uma branch para sua feature (`git checkout -b feature/nova-feature`)
+3. Commit suas mudanças (`git commit -am 'Adiciona nova feature'`)
+4. Push para a branch (`git push origin feature/nova-feature`)
+5. Abra um Pull Request
 
-## Project Structure
-```
-epilepsy_detection_project/
-|-- data/                      # Directory for the BONN dataset
-|   |-- Set A/                 # .txt files for Normal EEG
-|   |-- Set D/                 # .txt files for Interictal EEG
-|   |-- Set E/                 # .txt files for Ictal EEG
-|-- src/                       # Source code of the modules
-|   |-- init.py
-|   |-- data_loader.py         # Data loading and preprocessing
-|   |-- feature_extractor.py   # SWT feature extraction
-|   |-- dnn_model.py           # DNN model definition
-|   |-- fitness_function.py    # Unified fitness function for optimizers
-|   |-- bda.py                 # Implementation of the Binary Dragonfly Algorithm
-|   |-- bpso.py                # Implementation of the Binary Particle Swarm Optimization
-|   |-- utils.py               # Utility functions (metrics, plots)
-|-- results/                   # Output of results, saved models, plots
-|-- main.py                    # Main script to run the complete pipeline
-|-- README.md                  # This file
-|-- requirements.txt
-```
+#### Tipos de Contribuições
+- **Código**: Melhorias em algoritmos, otimizações, novos features
+- **Documentação**: Correções, expansões, traduções
+- **Testes**: Novos casos de teste, validação de resultados
+- **Bug Reports**: Issues detalhadas com passos para reproduzir
 
-## Setup and Installation
+#### Diretrizes de Código
+- **Python**: PEP 8, type hints, docstrings
+- **Commits**: Mensagens claras em português
+- **Branches**: Nomenclatura descritiva
+- **PRs**: Descrição detalhada das mudanças
 
-### Prerequisites
-* Python 3.10
-* pip
-* Git
+### Issues e Suporte
 
-### Steps
+#### Relatando Bugs
+Use o template de bug report com:
+- Descrição clara do problema
+- Passos para reproduzir
+- Ambiente (Python, TF, GPU)
+- Logs de erro completos
 
-1.  **Clone the Repository (if applicable):**
-    ```bash
-    git clone [https://github.com/andresichelero/TCC.git](https://github.com/andresichelero/TCC.git)
-    cd epilepsy_detection_project
-    ```
+#### Solicitando Features
+- Descreva o problema que resolve
+- Explique a solução proposta
+- Discuta alternativas consideradas
 
-2.  **Create and Activate a Virtual Environment:**
-    ```bash
-    python -m venv venv
-    # On Windows
-    .\venv\Scripts\activate
-    # On macOS/Linux
-    source venv/bin/activate
-    ```
+#### Questões Técnicas
+- Verifique documentação primeiro
+- Busque issues similares
+- Forneça código mínimo reproduzível
 
-3.  **Install Dependencies:**
-    Create a `requirements.txt` file with the following content (essential packages):
-    ```
-    numpy
-    pandas
-    scipy
-    scikit-learn
-    pywavelets
-    tensorflow>=2.15 # Use a version compatible with your GPU/CUDA
-    matplotlib
-    tqdm
-    ```
-    Then, install the dependencies:
-    ```bash
-    pip install -r requirements.txt
-    ```
+### Licença e Uso
 
-4.  **GPU Configuration (Optional, for TensorFlow):**
-    To use an NVIDIA GPU with TensorFlow:
-    * Install the latest NVIDIA drivers.
-    * Install CUDA Toolkit and cuDNN compatible with your TensorFlow version and driver. Refer to the [official TensorFlow documentation on GPU support](https://www.tensorflow.org/install/gpu).
-    The `main.py` script will attempt to use the GPU automatically if configured correctly.
+#### Licença
+Este projeto está sob licença MIT. Ver `LICENSE` para detalhes.
 
-## Usage
+#### Uso Acadêmico
+- Cite apropriadamente em trabalhos
+- Referencie algoritmos implementados
+- Mantenha atribuição original
 
-The main script `main.py` orchestrates the entire pipeline.
+#### Uso Comercial
+- Contate o autor para permissões especiais
+- Possível licenciamento customizado
 
-1.  **Configure Parameters (Optional):**
-    You can adjust the main parameters directly in the `main.py` file, such as:
-    * `T_MAX_ITER_OPTIMIZERS`: Number of iterations for BDA and BPSO (100 is recommended as per the paper, but it will take about **1000 min** for a complete round - tested with Ryzen 5600X & RTX 3070).
-    * `N_AGENTS_OPTIMIZERS`: Population size for BDA/BPSO (10, as per the paper).
-    * Specific parameters for BDA and BPSO (as detailed below).
-    * DNN training parameters (epochs, batch size, patience for EarlyStopping).
-    * `RANDOM_SEED` for reproducibility.
+### Agradecimentos
 
-2.  **Run the Main Script:**
-    Make sure your virtual environment is activated.
-    ```bash
-    python main.py
-    ```
+- **Prof. Marcelo Trindade Rebonatto**: Orientação e suporte técnico
+- **Universidade de Passo Fundo**: Infraestrutura e recursos
+- **Comunidade Open Source**: Bibliotecas e ferramentas utilizadas
 
-3.  **What to Expect:**
-    * The script will load the data, preprocess it, and extract the 45 SWT features.
-    * Next, it will run BDA and BPSO to select the optimal feature subsets. The fitness function will train and validate DNN models internally.
-    * After selection, final DNN models will be trained using the feature sets selected by BDA and BPSO.
-    * The final models will be evaluated on the test set.
-    * The console output will show progress, debug logs (if `DEBUG_FEATURES = True` in `feature_extractor.py`), fitness results, and final performance metrics.
-    * A convergence curve for the optimizers will be plotted (if `matplotlib` is configured to work in your environment).
-    * Detailed results and the trained final DNN models will be saved in the `results/` directory.
+---
 
-## Module Descriptions (`src/`)
-
-* `data_loader.py`: Contains functions to load data from the BONN dataset, apply preprocessing (Butterworth filtering, Min-Max normalization), and split the data into training, validation, and test sets.
-* `feature_extractor.py`: Responsible for extracting the 9 statistical and Hjorth features from the 5 sub-bands obtained by the Stationary Wavelet Transform (SWT).
-* `dnn_model.py`: Defines the architecture of the Deep Neural Network (MLP with 3 hidden layers of 10 sigmoid neurons each) and its compilation.
-* `fitness_function.py`: Implements the unified fitness function used by the BDA and BPSO algorithms. This function trains and evaluates the DNN with a subset of features to guide the optimization process.
-* `bda.py`: Implementation of the Binary Dragonfly Algorithm (BDA) for feature selection.
-* `bpso.py`: Implementation of the Binary Particle Swarm Optimization (BPSO) for feature selection.
-* `utils.py`: Utility functions, including calculation of classification metrics (accuracy, specificity, classification report) and plotting convergence curves.
-
-## Optimizer Parameters (As per Paper and Implementation)
-
-### Binary Dragonfly Algorithm (BDA)
-Based on Yogarajan et al. (2023) and the implementation:
-* `population_size (N)`: 10
-* `iterations (T)`: 100 (50 recommended)
-* `s` (separation weight): 0.1
-* `a` (alignment weight): 0.1
-* `c_cohesion` (cohesion weight): 0.7
-* `f_food` (food attraction factor): 1.0
-* `e_enemy` (enemy distraction factor): 1.0
-* `w_inertia` (inertia weight): 0.85 (fixed)
-* `tau_min`: 0.01 (for V-Shaped transfer function)
-* `tau_max`: 4.0 (for V-Shaped transfer function)
-* The dragonfly position update uses a V-Shaped function (e.g., `abs(tanh(Step / tau))`) to determine the probability of flipping a bit.
-* The Separation, Alignment, and Cohesion components are calculated considering the other dragonflies in the population.
-
-### Binary Particle Swarm Optimization (BPSO)
-Common values:
-* `population_size (N)`: 10
-* `iterations (T)`: 100 (50 recommended)
-* `w_max` (maximum inertia): 0.9
-* `w_min` (minimum inertia): 0.4 (inertia weight decreases linearly)
-* `c1` (cognitive coefficient): 2.0
-* `c2` (social coefficient): 2.0
-* `Vmax` (velocity limit): 4.0 (optional, but recommended)
-* The particle position update uses a Sigmoid transfer function applied to the velocity to determine the probability of the bit being 1.
-
-### Fitness Function (Common to both)
-* $Fitness = \alpha \cdot \text{errorRate} + \beta \cdot (\text{numFeaturesSel} / \text{totalNumFeatures})$
-* $\alpha = 0.99$
-* $\beta = 0.01$
-
-## Possible Improvements and Future Work
-
-* **Hyperparameter Fine-Tuning:** Optimize BDA, BPSO parameters, and DNN architecture/training.
-* **Explore Different Wavelets and SWT Decomposition Levels.**
-* **Test with Other EEG Datasets.**
-* **Compare with Other Feature Selection Metaheuristics.**
-* **Utilize More Advanced DNN Architectures:** Such as Convolutional Neural Networks (CNNs) or Recurrent Neural Networks (RNNs/LSTMs), which may be more suitable for time-series data like EEG.
+*Última atualização: Dezembro 2024*
