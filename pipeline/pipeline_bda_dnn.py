@@ -24,6 +24,8 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.model_selection import StratifiedKFold, cross_val_score
 from scipy.stats import skew, kurtosis
 from tqdm import tqdm
+import matplotlib.pyplot as plt
+import shap
 
 # Importa os utilitários compartilhados
 try:
@@ -587,7 +589,7 @@ class PipelineHelpers:
         X_train_full_all_feat, y_train_full,
         X_test_all_feat, y_test,
         dnn_params, class_names,
-        opt_fitness_score, plots_dir
+        opt_fitness_score, plots_dir, run_xai=False
     ):
         """Treina e avalia o modelo DNN final com um subconjunto de features."""
         print(f"\n--- Treinamento e Avaliação Final: {model_name} ---")
@@ -596,7 +598,7 @@ class PipelineHelpers:
 
         if num_selected == 0:
             print(f"ERRO: {model_name} não selecionou nenhuma feature. Avaliação abortada.")
-            return None, None
+            return None, None, None
 
         print(f"{model_name}: Selecionou {num_selected} características.")
         
@@ -614,10 +616,12 @@ class PipelineHelpers:
             final_model.summary()
 
         print(f"Iniciando treinamento final do modelo {model_name}...")
+        MODEL_SAVE_PATH = os.path.join(plots_dir, '..', f'best_dnn_model_{model_name}.keras') # Salva no diretório pai dos plots
         early_stopping_final = tf.keras.callbacks.EarlyStopping(
             monitor="val_loss", patience=dnn_params.get("patience", 30),
             restore_best_weights=True, verbose=1 if VERBOSE_OPTIMIZER_LEVEL > 0 else 0,
         )
+        model_checkpoint_final = tf.keras.callbacks.ModelCheckpoint(MODEL_SAVE_PATH, monitor='val_loss', save_best_only=True, verbose=0)
         
         history = final_model.fit(
             X_train_full_selected,
@@ -642,17 +646,117 @@ class PipelineHelpers:
         y_pred_test = np.argmax(y_pred_test_probs, axis=1)
 
         metrics = Metrics.calculate_all_metrics(y_test, y_pred_test, class_names=class_names)
+        metrics["y_pred_list"] = y_pred_test.tolist()
+        metrics["y_true_list"] = y_test.tolist()
         metrics["num_selected_features"] = num_selected
         metrics["selected_feature_indices"] = selected_indices.tolist()
         metrics["fitness_score_from_optimizer"] = opt_fitness_score
 
-        del final_model
+        if not run_xai:
+            del final_model
+        metrics["saved_model_path"] = MODEL_SAVE_PATH
         gc.collect()
-        return metrics, history_data
+        return metrics, history_data, final_model if run_xai else None
+
+def perform_shap_analysis(model, X_background, X_test, y_test, class_names, plots_dir, save_plots, nsamples=500):
+    """
+    Perform SHAP analysis on the BDA-DNN model.
+    
+    Args:
+        model: Trained Keras model
+        X_background: Background dataset for SHAP (smaller subset)
+        X_test: Test dataset
+        y_test: Test labels
+        class_names: List of class names
+        plots_dir: Directory to save plots
+        save_plots: Whether to save plots
+        nsamples: Number of samples for SHAP approximation
+    """
+    try:
+        import shap
+        print("Performing SHAP analysis...")
+        
+        # Create SHAP explainer
+        def model_wrapper(x):
+            predictions = model.predict(x)
+            return predictions
+        
+        background_size = min(10, len(X_background))  # Smaller background for memory efficiency
+        background_sample = X_background[:background_size]
+        
+        # Use KernelExplainer
+        explainer = shap.KernelExplainer(model_wrapper, background_sample)
+        
+        # Select fewer test samples for analysis (KernelExplainer is slower and memory intensive)
+        test_size = min(3, len(X_test))  # Reduced from 5 to 3
+        test_indices = np.random.choice(len(X_test), test_size, replace=False)
+        X_test_sample = X_test[test_indices]
+        y_test_sample = y_test[test_indices]
+        
+        # Calculate SHAP values
+        shap_values = explainer.shap_values(X_test_sample)
+        
+        # Get predictions for the test sample
+        predictions = model.predict(X_test_sample)
+        pred_classes = np.argmax(predictions, axis=1)
+        
+        # Handle SHAP values shape
+        if isinstance(shap_values, list):
+            shap_for_pred = shap_values[0]  # For binary/multiclass, take first
+        else:
+            shap_for_pred = shap_values
+        
+        # shap_for_pred should be 2D (n_samples, n_features)
+        
+        # Save SHAP values BEFORE attempting to plot (so we don't lose data if plotting fails)
+        shap_results = {
+            "shap_values_sample": shap_for_pred.tolist(),
+            "test_predictions": predictions.tolist(),
+            "test_true_labels": y_test_sample.tolist(),
+            "pred_classes": pred_classes.tolist(),
+            "background_size": background_size,
+            "test_sample_size": test_size
+        }
+        
+        # Save to JSON file
+        shap_json_path = os.path.join(plots_dir, "shap_values.json")
+        try:
+            with open(shap_json_path, 'w') as f:
+                json.dump(shap_results, f, indent=4, cls=NumpyEncoder)
+        except Exception as e:
+            print(f"Error saving SHAP values to JSON: {e}")
+        
+        # Now attempt to create plots
+        try:
+            # Summary plot
+            plt.figure(figsize=(10, 6))
+            shap.summary_plot(shap_for_pred, X_test_sample, show=False)
+            if save_plots:
+                plt.savefig(os.path.join(plots_dir, "shap_summary_plot.png"), dpi=300, bbox_inches='tight')
+            plt.close()
+            
+            # Waterfall plot for first sample
+            plt.figure(figsize=(10, 6))
+            shap.plots.waterfall(explainer.expected_value, shap_for_pred[0], X_test_sample[0], show=False)
+            if save_plots:
+                plt.savefig(os.path.join(plots_dir, "shap_waterfall_plot.png"), dpi=300, bbox_inches='tight')
+            plt.close()
+            
+        except Exception as e:
+            print(f"Error creating SHAP plots: {e}")
+        
+        return shap_results
+        
+    except ImportError:
+        print("SHAP library not available. Skipping SHAP analysis.")
+        return None
+    except Exception as e:
+        print(f"Error in SHAP analysis: {e}")
+        return None
 
 # --- Função Principal do Pipeline ---
 
-def run_bda_dnn_pipeline(run_id, base_results_dir, global_constants, random_seed_for_run, X_full_feat=None, feature_names=None, raw_labels=None):
+def run_bda_dnn_pipeline(run_id, base_results_dir, global_constants, random_seed_for_run, X_full_feat=None, feature_names=None, raw_labels=None, run_xai=False):
     """
     Encapsula a execução completa do pipeline BDA-DNN para uma única execução.
     
@@ -791,7 +895,7 @@ def run_bda_dnn_pipeline(run_id, base_results_dir, global_constants, random_seed
 
         model_name = f"BDA-F{run_results['num_selected_features']}-Run{run_id}"
         
-        final_metrics, history_data = PipelineHelpers.train_and_evaluate_final_model(
+        final_metrics, history_data, trained_model = PipelineHelpers.train_and_evaluate_final_model(
             model_name=model_name,
             selected_features_vector=Sf_bda,
             X_train_full_all_feat=X_train_full_feat_final,
@@ -801,7 +905,8 @@ def run_bda_dnn_pipeline(run_id, base_results_dir, global_constants, random_seed
             dnn_params=DNN_TRAINING_PARAMS_FINAL,
             class_names=CLASS_NAMES,
             opt_fitness_score=best_fitness_bda,
-            plots_dir=PLOTS_DIR
+            plots_dir=PLOTS_DIR,
+            run_xai=run_xai
         )
         
         run_results["dnn_train_eval_time_sec"] = time.time() - start_time_dnn_train
@@ -810,6 +915,24 @@ def run_bda_dnn_pipeline(run_id, base_results_dir, global_constants, random_seed
             run_results["final_metrics"] = final_metrics
             run_results["final_accuracy"] = final_metrics.get("accuracy", 0.0)
             run_results["num_selected_features"] = final_metrics.get("num_selected_features", 0)
+        
+        # Perform SHAP analysis if requested
+        if run_xai and trained_model is not None and shap is not None:
+            print("\n\n--- 7. Análise XAI/SHAP ---")
+            # Use training data as background (subset), but with selected features
+            selected_indices = np.where(Sf_bda == 1)[0]
+            X_background_selected = X_train_full_feat_final[:, selected_indices]
+            X_test_selected = X_test_feat[:, selected_indices]
+            shap_results = perform_shap_analysis(
+                trained_model, X_background_selected, X_test_selected, y_test, CLASS_NAMES, PLOTS_DIR, SAVE_PLOTS_PER_RUN
+            )
+            if shap_results:
+                run_results["shap_analysis"] = shap_results
+            del trained_model  # Now can delete
+        
+        # Set execution time before XAI analysis to exclude its time
+        total_execution_time = time.time() - start_time_total
+        run_results["execution_time_sec"] = total_execution_time
         
         del X_train_full_feat_final, y_train_full_labels_final, X_test_feat, y_test # Libera memória
         gc.collect()
@@ -821,9 +944,7 @@ def run_bda_dnn_pipeline(run_id, base_results_dir, global_constants, random_seed
         run_results["error"] = str(e)
 
     # 8. Finalização
-    total_execution_time = time.time() - start_time_total
-    run_results["execution_time_sec"] = total_execution_time
-    print(f"BDA-DNN Run {run_id} concluída. Tempo total: {total_execution_time/60:.2f} minutos.")
+    print(f"BDA-DNN Run {run_id} concluída. Tempo total: {run_results['execution_time_sec']/60:.2f} minutos.")
     
     # Salva os resultados individuais desta execução
     results_file_path = os.path.join(RUN_RESULTS_DIR, "run_results.json")

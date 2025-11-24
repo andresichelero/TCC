@@ -463,7 +463,7 @@ def run_rhcb5_pipeline(run_id, base_results_dir, global_constants, random_seed_f
             # SHAP analysis
             try:
                 # Use a subset of training data as background
-                background_size = min(100, len(X_train))
+                background_size = min(20, len(X_train))  # Reduced from 100 to 20 for memory
                 background_indices = np.random.choice(len(X_train), background_size, replace=False)
                 X_background = X_train[background_indices]
                 
@@ -482,6 +482,10 @@ def run_rhcb5_pipeline(run_id, base_results_dir, global_constants, random_seed_f
         else:
             print("\n--- 6. Análise de Interpretabilidade (XAI) - Pulada ---")
 
+        # Set execution time before XAI analysis to exclude its time
+        total_execution_time = time.time() - start_time_total
+        run_results["execution_time_sec"] = total_execution_time
+        
         del X_train, y_train, X_val, y_val # Libera memória
         gc.collect()
 
@@ -503,6 +507,8 @@ def run_rhcb5_pipeline(run_id, base_results_dir, global_constants, random_seed_f
         final_metrics = Metrics.calculate_all_metrics(y_test, y_pred, class_names=CLASS_NAMES)
         
         if final_metrics:
+            final_metrics["y_pred_list"] = y_pred.tolist()
+            final_metrics["y_true_list"] = y_test.tolist()
             run_results["final_metrics"] = final_metrics
             run_results["final_accuracy"] = final_metrics.get("accuracy", 0.0)
             # RHCB5 não seleciona features
@@ -518,9 +524,7 @@ def run_rhcb5_pipeline(run_id, base_results_dir, global_constants, random_seed_f
         run_results["error"] = str(e)
 
     # 8. Finalização
-    total_execution_time = time.time() - start_time_total
-    run_results["execution_time_sec"] = total_execution_time
-    print(f"RHCB5 Run {run_id} concluída. Tempo total: {total_execution_time/60:.2f} minutos.")
+    print(f"RHCB5 Run {run_id} concluída. Tempo total: {run_results['execution_time_sec']/60:.2f} minutos.")
     
     # Salva os resultados individuais desta execução
     results_file_path = os.path.join(RUN_RESULTS_DIR, "run_results.json")

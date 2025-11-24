@@ -59,7 +59,7 @@ ORIGINAL_INPUT_LENGTH = 4097 # Comprimento original do sinal Bonn
 TARGET_INPUT_LENGTH = 4096 # Comprimento alvo após remoção da 1ª amostra
 
 # Parâmetros da Divisão de Dados
-TEST_SIZE = 0.20 # Proporção do conjunto de teste
+TEST_SIZE = 0.15 # Proporção do conjunto de teste
 VAL_SIZE = 0.15 # Proporção do conjunto de validação
 
 # Configuração de Hardware

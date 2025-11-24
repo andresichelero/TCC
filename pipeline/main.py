@@ -48,13 +48,13 @@ except ImportError as e:
     sys.exit(1)
 
 # --- Configurações da Comparação ---
-NUM_RUNS = 25 # Número de vezes para executar cada pipeline
+NUM_RUNS = 30 # Número de vezes para executar cada pipeline
 SAVE_PLOTS = True # Salvar plots agregados
 
 # --- Configuração de Diretórios ---
 # Assume que 'data' está no diretório pai
 current_dir = os.path.dirname(os.path.abspath(__file__))
-BASE_DATA_DIR = os.path.join(current_dir, "..", "data")
+BASE_DATA_DIR = os.path.join(current_dir, "..", "data", "Bonn")
 BASE_RESULTS_DIR = os.path.join(current_dir, "results")
 
 # Passa as constantes globais para as funções do pipeline
@@ -255,7 +255,7 @@ def main():
         run_xai=False  # Always False for all runs, XAI only for best if enabled
     )
 
-    # Find the best RHCB5 run (excluding outliers in execution time) and re-run with XAI
+    # Find the best RHCB5 run and re-run with XAI
     valid_rhcb5_results = [
         r for r in rhcb5_all_results
         if 'final_metrics' in r
@@ -265,73 +265,78 @@ def main():
     ]
     
     if valid_rhcb5_results:
-        # Calculate outliers in execution time using IQR
-        exec_times = [r['execution_time_sec'] for r in valid_rhcb5_results]
-        q1 = np.percentile(exec_times, 25)
-        q3 = np.percentile(exec_times, 75)
-        iqr = q3 - q1
-        lower_bound = q1 - 1.5 * iqr
-        upper_bound = q3 + 1.5 * iqr
+        # Select the best accuracy
+        best_rhcb5_run = max(valid_rhcb5_results, key=lambda r: r['final_metrics']['accuracy'])
+        best_accuracy = best_rhcb5_run['final_metrics']['accuracy']
+        best_run_id = best_rhcb5_run['run_id']
+        best_seed = best_rhcb5_run['seed']
+        print(f"\nMelhor run RHCB5: Run {best_run_id}, Seed {best_seed}, Accuracy {best_accuracy:.4f}, Time {best_rhcb5_run['execution_time_sec']:.2f}s")
         
-        # Filter out outliers
-        non_outlier_results = [r for r in valid_rhcb5_results if lower_bound <= r['execution_time_sec'] <= upper_bound]
-        
-        if non_outlier_results:
-            # Select the best accuracy among non-outliers
-            best_rhcb5_run = max(non_outlier_results, key=lambda r: r['final_metrics']['accuracy'])
-            best_accuracy = best_rhcb5_run['final_metrics']['accuracy']
-            best_run_id = best_rhcb5_run['run_id']
-            best_seed = best_rhcb5_run['seed']
-            print(f"\nMelhor run RHCB5 (excluindo outliers de tempo): Run {best_run_id}, Seed {best_seed}, Accuracy {best_accuracy:.4f}, Time {best_rhcb5_run['execution_time_sec']:.2f}s")
-            print(f"Outliers removidos: {len(valid_rhcb5_results) - len(non_outlier_results)} runs")
+        # Re-run the best run with XAI enabled if USE_XAI is True
+        if USE_XAI:
+            print("Re-executando com XAI...")
+            best_rhcb5_result_with_xai = run_rhcb5_pipeline(
+                run_id=best_run_id,
+                base_results_dir=os.path.join(COMPARISON_RUN_DIR, "RHCB5_runs"),
+                global_constants=GLOBAL_CONSTANTS,
+                random_seed_for_run=best_seed,
+                data_processed=data_processed,
+                raw_labels=raw_labels,
+                run_xai=True
+            )
             
-            # Re-run the best run with XAI enabled if USE_XAI is True
-            if USE_XAI:
-                print("Re-executando com XAI...")
-                best_rhcb5_result_with_xai = run_rhcb5_pipeline(
-                    run_id=best_run_id,
-                    base_results_dir=os.path.join(COMPARISON_RUN_DIR, "RHCB5_runs"),
-                    global_constants=GLOBAL_CONSTANTS,
-                    random_seed_for_run=best_seed,
-                    data_processed=data_processed,
-                    raw_labels=raw_labels,
-                    run_xai=True
-                )
-                
-                # Update the results with XAI
-                for i, result in enumerate(rhcb5_all_results):
-                    if result.get('run_id') == best_run_id:
-                        rhcb5_all_results[i] = best_rhcb5_result_with_xai
-                        break
-            else:
-                print("XAI desabilitado. Pulando re-execução com XAI.")
+            # Update the results with XAI
+            for i, result in enumerate(rhcb5_all_results):
+                if result.get('run_id') == best_run_id:
+                    rhcb5_all_results[i] = best_rhcb5_result_with_xai
+                    break
         else:
-            print("Aviso: Todos os runs RHCB5 são outliers de tempo. Usando o melhor accuracy sem filtro.")
-            best_rhcb5_run = max(valid_rhcb5_results, key=lambda r: r['final_metrics']['accuracy'])
-            best_accuracy = best_rhcb5_run['final_metrics']['accuracy']
-            if USE_XAI:
-                best_run_id = best_rhcb5_run['run_id']
-                best_seed = best_rhcb5_run['seed']
-                print("Re-executando com XAI...")
-                best_rhcb5_result_with_xai = run_rhcb5_pipeline(
-                    run_id=best_run_id,
-                    base_results_dir=os.path.join(COMPARISON_RUN_DIR, "RHCB5_runs"),
-                    global_constants=GLOBAL_CONSTANTS,
-                    random_seed_for_run=best_seed,
-                    data_processed=data_processed,
-                    raw_labels=raw_labels,
-                    run_xai=True
-                )
-                # Update the results with XAI
-                for i, result in enumerate(rhcb5_all_results):
-                    if result.get('run_id') == best_run_id:
-                        rhcb5_all_results[i] = best_rhcb5_result_with_xai
-                        break
-            else:
-                print("XAI desabilitado. Pulando re-execução com XAI.")
+            print("XAI desabilitado. Pulando re-execução com XAI.")
     else:
         print("Aviso: Nenhum run RHCB5 válido encontrado.")
         best_rhcb5_run = None
+
+    # Find the best BDA-DNN run and re-run with XAI
+    valid_bda_results = [
+        r for r in bda_all_results
+        if 'final_metrics' in r
+        and isinstance(r['final_metrics'], dict)
+        and 'accuracy' in r['final_metrics']
+        and 'execution_time_sec' in r
+    ]
+    
+    if valid_bda_results:
+        # Select the best accuracy
+        best_bda_run = max(valid_bda_results, key=lambda r: r['final_metrics']['accuracy'])
+        best_accuracy = best_bda_run['final_metrics']['accuracy']
+        best_run_id = best_bda_run['run_id']
+        best_seed = best_bda_run['seed']
+        print(f"\nMelhor run BDA-DNN: Run {best_run_id}, Seed {best_seed}, Accuracy {best_accuracy:.4f}, Time {best_bda_run['execution_time_sec']:.2f}s")
+        
+        # Re-run the best run with XAI enabled if USE_XAI is True
+        if USE_XAI:
+            print("Re-executando BDA-DNN com XAI...")
+            best_bda_result_with_xai = run_bda_dnn_pipeline(
+                run_id=best_run_id,
+                base_results_dir=os.path.join(COMPARISON_RUN_DIR, "BDA_DNN_runs"),
+                global_constants=GLOBAL_CONSTANTS,
+                random_seed_for_run=best_seed,
+                X_full_feat=X_full_feat,
+                feature_names=feature_names,
+                raw_labels=raw_labels,
+                run_xai=True
+            )
+            
+            # Update the results with XAI
+            for i, result in enumerate(bda_all_results):
+                if result.get('run_id') == best_run_id:
+                    bda_all_results[i] = best_bda_result_with_xai
+                    break
+        else:
+            print("XAI desabilitado. Pulando re-execução com XAI para BDA-DNN.")
+    else:
+        print("Aviso: Nenhum run BDA-DNN válido encontrado.")
+        best_bda_run = None
 
     # 4. Salvar resultados brutos
     print("\nSalvando resultados brutos de todas as execuções...")
