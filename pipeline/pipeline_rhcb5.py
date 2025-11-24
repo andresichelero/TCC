@@ -407,6 +407,20 @@ def run_rhcb5_pipeline(run_id, base_results_dir, global_constants, random_seed_f
                 random_state=random_seed_for_run, # Usa a seed da execução
             )
         )
+        
+        # 4.5. Normalizar dados após split para evitar data leakage
+        # Reshape para 2D para normalização
+        X_train_2d = X_train.reshape(X_train.shape[0], -1)
+        X_val_2d = X_val.reshape(X_val.shape[0], -1)
+        X_test_2d = X_test.reshape(X_test.shape[0], -1)
+        
+        X_train_2d, X_val_2d, X_test_2d = DataHandler.normalize_data_split(X_train_2d, X_val_2d, X_test_2d)
+        
+        # Reshape de volta para 3D
+        X_train = X_train_2d.reshape(X_train.shape[0], TARGET_INPUT_LENGTH, 1)
+        X_val = X_val_2d.reshape(X_val.shape[0], TARGET_INPUT_LENGTH, 1)
+        X_test = X_test_2d.reshape(X_test.shape[0], TARGET_INPUT_LENGTH, 1)
+        
         del X, y # Libera memória
         gc.collect()
 

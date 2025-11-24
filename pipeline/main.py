@@ -419,6 +419,18 @@ def main():
                 else:
                     print("  > Nenhuma diferença estatisticamente significativa (Wilcoxon).")
                 
+                # Tamanho do Efeito para Wilcoxon (r = Z / sqrt(N))
+                r_effect_size = wilcoxon_result.statistic / np.sqrt(len(bda_clean))  # type: ignore
+                if abs(r_effect_size) < 0.1:
+                    r_interpretation = "Pequeno"
+                elif abs(r_effect_size) < 0.3:
+                    r_interpretation = "Médio"
+                else:
+                    r_interpretation = "Grande"
+                results["tests"]["wilcoxon"]["effect_size_r"] = float(r_effect_size)
+                results["tests"]["wilcoxon"]["effect_size_interpretation"] = r_interpretation
+                print(f"Tamanho do Efeito (r): {r_effect_size:.4f} - {r_interpretation}")
+                
                 # 3. Teste T Pareado (se pressuposto de normalidade for atendido)
                 if normality_assumption:
                     ttest_stat, ttest_p = stats.ttest_rel(bda_clean, rhcb5_clean)

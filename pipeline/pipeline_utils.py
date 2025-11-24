@@ -137,7 +137,7 @@ class DataHandler:
     @staticmethod
     def preprocess_eeg(data, fs=FS, highcut_hz=HIGHCUT_HZ, order=FILTER_ORDER):
         """
-        Aplica filtro Butterworth passa-baixas e normalização Min-Max para [-1, 1].
+        Aplica filtro Butterworth passa-baixas aos sinais EEG.
         """
         processed_data = np.zeros_like(data)
         nyq = 0.5 * fs
@@ -147,24 +147,41 @@ class DataHandler:
             raise ValueError(f"Frequência de corte ({highcut_hz} Hz) resulta em valor normalizado >= 1.0. Verifique FS e highcut_hz.")
             
         b, a = butter(order, high, btype='low', analog=False)
-        scaler = MinMaxScaler(feature_range=(-1, 1))
 
-        print("Iniciando pré-processamento (filtragem e normalização)...")
+        print("Iniciando pré-processamento (filtragem)...")
         for i in tqdm(range(data.shape[0]), desc="Pré-processando segmentos", leave=False):
             signal = data[i, :]
             
             # 1. Filtragem
             filtered_signal = filtfilt(b, a, signal)
             
-            # 2. Normalização
-            # Reshape para (n_amostras, 1) exigido pelo scaler
-            reshaped_signal = filtered_signal.reshape(-1, 1) 
-            normalized_signal = scaler.fit_transform(reshaped_signal).flatten()
-            
-            processed_data[i, :] = normalized_signal.astype(np.float32)
+            processed_data[i, :] = filtered_signal.astype(np.float32)
             
         print("Pré-processamento concluído.")
         return processed_data
+
+    @staticmethod
+    def normalize_data_split(X_train, X_val, X_test):
+        """
+        Aplica normalização Min-Max [-1, 1] aos dados divididos.
+        Fit apenas no X_train para evitar data leakage.
+        
+        Args:
+            X_train, X_val, X_test: Arrays numpy com shape (n_samples, n_features)
+        
+        Returns:
+            X_train_norm, X_val_norm, X_test_norm: Dados normalizados
+        """
+        scaler = MinMaxScaler(feature_range=(-1, 1))
+        
+        # Fit no treino
+        X_train_norm = scaler.fit_transform(X_train)
+        
+        # Transform nos outros
+        X_val_norm = scaler.transform(X_val)
+        X_test_norm = scaler.transform(X_test)
+        
+        return X_train_norm, X_val_norm, X_test_norm
 
     @staticmethod
     def split_data(data, labels, test_size=TEST_SIZE, val_size=VAL_SIZE, random_state=RANDOM_SEED_GLOBAL):
