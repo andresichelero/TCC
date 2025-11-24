@@ -834,6 +834,13 @@ def run_bda_dnn_pipeline(run_id, base_results_dir, global_constants, random_seed
                 random_state=random_seed_for_run
             )
         )
+    
+        # Features estatísticas PRECISAM ser normalizadas para o KNN e DNN funcionarem
+        print("Normalizando features (Fit no Treino, Transform em Val/Teste)...")
+        X_train_feat, X_val_feat, X_test_feat = DataHandler.normalize_data_split(
+            X_train_feat, X_val_feat, X_test_feat
+        )
+        
         del X_full_feat # Libera memória
         gc.collect()
 

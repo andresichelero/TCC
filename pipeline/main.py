@@ -420,7 +420,13 @@ def main():
                     print("  > Nenhuma diferença estatisticamente significativa (Wilcoxon).")
                 
                 # Tamanho do Efeito para Wilcoxon (r = Z / sqrt(N))
-                r_effect_size = wilcoxon_result.statistic / np.sqrt(len(bda_clean))  # type: ignore
+                # Aproximação do Z-score a partir do W-statistic para N > 20
+                n = len(bda_clean)
+                mu_w = n * (n + 1) / 4
+                sigma_w = np.sqrt(n * (n + 1) * (2 * n + 1) / 24)
+                z_score = (wilcoxon_result.statistic - mu_w) / sigma_w
+                
+                r_effect_size = abs(z_score) / np.sqrt(n)
                 if abs(r_effect_size) < 0.1:
                     r_interpretation = "Pequeno"
                 elif abs(r_effect_size) < 0.3:
