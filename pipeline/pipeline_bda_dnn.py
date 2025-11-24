@@ -735,12 +735,19 @@ def perform_shap_analysis(model, X_background, X_test, y_test, class_names, plot
                 plt.savefig(os.path.join(plots_dir, "shap_summary_plot.png"), dpi=300, bbox_inches='tight')
             plt.close()
             
-            # Waterfall plot for first sample
-            plt.figure(figsize=(10, 6))
-            shap.plots.waterfall(explainer.expected_value, shap_for_pred[0], X_test_sample[0], show=False)
-            if save_plots:
-                plt.savefig(os.path.join(plots_dir, "shap_waterfall_plot.png"), dpi=300, bbox_inches='tight')
-            plt.close()
+            # Waterfall plot for first sample (skip for multi-output models)
+            if shap_for_pred.shape[-1] == 1:  # Single output
+                plt.figure(figsize=(10, 6))
+                explanation = shap.Explanation(
+                    values=shap_for_pred[0],
+                    base_values=explainer.expected_value,
+                    data=X_test_sample[0],
+                    feature_names=[f'feat_{i}' for i in range(len(X_test_sample[0]))]
+                )
+                shap.plots.waterfall(explanation, show=False)
+                if save_plots:
+                    plt.savefig(os.path.join(plots_dir, "shap_waterfall_plot.png"), dpi=300, bbox_inches='tight')
+                plt.close()
             
         except Exception as e:
             print(f"Error creating SHAP plots: {e}")
@@ -923,6 +930,14 @@ def run_bda_dnn_pipeline(run_id, base_results_dir, global_constants, random_seed
             run_results["final_accuracy"] = final_metrics.get("accuracy", 0.0)
             run_results["num_selected_features"] = final_metrics.get("num_selected_features", 0)
         
+        # Salvar dados para geração posterior de gráficos
+        run_results["training_history"] = history_data
+        run_results["convergence_curve"] = convergence_bda.tolist()
+        run_results["best_accuracy_curve"] = acc_curve_bda
+        run_results["best_num_features_curve"] = nfeat_curve_bda.tolist()
+        run_results["feature_selection_history"] = feat_sel_hist.tolist()
+        run_results["population_fitness_history"] = pop_fitness_hist.tolist()
+        
         # Perform SHAP analysis if requested
         if run_xai and trained_model is not None and shap is not None:
             print("\n\n--- 7. Análise XAI/SHAP ---")
@@ -949,6 +964,7 @@ def run_bda_dnn_pipeline(run_id, base_results_dir, global_constants, random_seed
         import traceback
         traceback.print_exc()
         run_results["error"] = str(e)
+        run_results["execution_time_sec"] = time.time() - start_time_total
 
     # 8. Finalização
     print(f"BDA-DNN Run {run_id} concluída. Tempo total: {run_results['execution_time_sec']/60:.2f} minutos.")

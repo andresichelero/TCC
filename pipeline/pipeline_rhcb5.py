@@ -279,7 +279,7 @@ def perform_shap_analysis(model, X_background, X_test, y_test, class_names, plot
         try:
             # Plot summary plot
             fig_summary = plt.figure(figsize=(12, 8))
-            shap.summary_plot(shap_for_pred, 
+            shap.summary_plot(shap_for_pred, X_test_flat[:5],
                              feature_names=[f't_{i}' for i in range(shap_for_pred.shape[1])],
                              show=False)
             Plotting._handle_plot(fig_summary, "shap_summary_plot.png", plots_dir, save_plots,
@@ -304,7 +304,7 @@ def perform_shap_analysis(model, X_background, X_test, y_test, class_names, plot
                 feature_names=[f't_{i}' for i in range(shap_for_pred.shape[1])]
             )
             
-            shap.plots.waterfall(explanation, show=False)
+            shap.plots.waterfall(explanation)
             Plotting._handle_plot(fig_waterfall, "shap_waterfall_sample.png", plots_dir, save_plots,
                                  "SHAP Waterfall Plot - Sample 1")
         except Exception as e:
@@ -451,6 +451,7 @@ def run_rhcb5_pipeline(run_id, base_results_dir, global_constants, random_seed_f
         
         history_data = history.history
         run_results["dnn_train_eval_time_sec"] = time.time() - start_time_dnn_train
+        run_results["training_history"] = history_data
         
         if SAVE_PLOTS_PER_RUN:
             Plotting.plot_dnn_training_history(
@@ -536,6 +537,7 @@ def run_rhcb5_pipeline(run_id, base_results_dir, global_constants, random_seed_f
         import traceback
         traceback.print_exc()
         run_results["error"] = str(e)
+        run_results["execution_time_sec"] = time.time() - start_time_total
 
     # 8. Finalização
     print(f"RHCB5 Run {run_id} concluída. Tempo total: {run_results['execution_time_sec']/60:.2f} minutos.")

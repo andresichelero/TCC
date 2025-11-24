@@ -228,6 +228,12 @@ def main():
         raw_data, fs=FS, highcut_hz=HIGHCUT_HZ, order=FILTER_ORDER
     )
 
+    # Salvar dados processados para geração posterior de gráficos
+    np.save(os.path.join(COMPARISON_RUN_DIR, "raw_data.npy"), raw_data)
+    np.save(os.path.join(COMPARISON_RUN_DIR, "data_processed.npy"), data_processed)
+    np.save(os.path.join(COMPARISON_RUN_DIR, "raw_labels.npy"), raw_labels)
+    print("Dados brutos, processados e labels salvos para geração posterior de gráficos.")
+
     # 4. Extrair características SWT uma vez (para BDA-DNN)
     print("\n--- 3. Extraindo Características SWT ---")
     from pipeline_bda_dnn import FeatureExtractor
@@ -351,6 +357,20 @@ def main():
         print(f"Resultados brutos salvos em: {raw_results_path}")
     except Exception as e:
         print(f"Erro ao salvar resultados brutos: {e}")
+
+    # Salvar dados de análise SHAP/XAI separadamente
+    print("\nSalvando dados de análise SHAP/XAI separadamente...")
+    shap_analise = {
+        "bda_dnn_shap": [run.get("shap_analysis") for run in bda_all_results if run.get("shap_analysis")],
+        "rhcb5_shap": [run.get("shap_results") for run in rhcb5_all_results if run.get("shap_results")]
+    }
+    shap_analise_path = os.path.join(COMPARISON_RUN_DIR, "all_shap_analise.json")
+    try:
+        with open(shap_analise_path, "w") as f:
+            json.dump(shap_analise, f, cls=NumpyEncoder, indent=4)
+        print(f"Dados de análise SHAP/XAI salvos em: {shap_analise_path}")
+    except Exception as e:
+        print(f"Erro ao salvar dados de análise SHAP/XAI: {e}")
 
     # 5. Compilar Estatísticas
     bda_df, bda_stats = compile_and_save_statistics(
@@ -802,8 +822,8 @@ def main():
         except Exception as e:
             print(f"Erro ao salvar CIs: {e}")
     results_dict_list_for_plotting = {
-        "BDA_DNN": bda_all_results,
-        "RHCB5": rhcb5_all_results
+        "BDA_DNN": [run for run in bda_all_results if not (run.get("shap_completed", False))],
+        "RHCB5": [run for run in rhcb5_all_results if not (run.get("shap_completed", False))]
     }
     
     # Boxplots (função nova em pipeline_utils.py)
