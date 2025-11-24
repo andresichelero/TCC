@@ -1,0 +1,434 @@
+\documentclass[alpha-refs,brazilian]{CC-EC_TF-TC}
+
+\AtBeginDocument{\renewcommand{\harvardand}{e}}
+
+\usepackage{todonotes}
+\usepackage{soul}
+\usepackage{enumitem}
+\usepackage{float}
+\usepackage{subfigure}
+\usepackage{subcaption}
+\usepackage{epstopdf}
+\usepackage{lmodern}
+\usepackage{multirow}
+
+\title{Estratégias Computacionais para Detecção de Epilepsia em EEG: Abordagem em \textit{pipeline versus end-to-end}}
+
+\titleother{Computational Strategies for Epilepsy Detection in EEG: Pipeline-Based versus End-to-End Approaches}
+
+\author[1]{André Gasoli Sichelero}
+\author[1]{Marcelo Trindade Rebonatto}
+
+\affil[1]{Universidade de Passo Fundo, Instituto de Ciências Exatas e Geociências, Ciência da Computação}
+\authnote{\authfn{1}136235@upf.br;}
+\runningauthor{Sichelero e Rebonatto}
+\titulores{Título resumido - não quebrar linha}
+\papercat{Trabalho de Conclusão de Curso}
+\jyear{2025}           % edition year
+\jmonth{Dezembro}      % edition month
+\jcourse{Ciência da Computação}
+\setcounter{page}{1}
+\firstpage{1}
+
+\begin{document}
+\begin{frontmatter}
+	
+\maketitle
+\thispagestyle{empty}
+
+\begin{Abstract}
+Electroencephalography (EEG) is a widely recognized non-invasive technique for capturing the brain’s electrical activity and plays a pivotal role in the diagnosis of neurological disorders such as epilepsy.
+This study explores and contrasts two computational strategies for seizure detection using EEG signals.
+The first strategy is based on a machine learning pipeline that employs the Binary Dragonfly Algorithm (BDA) in a wrapper approach guided by k-Nearest Neighbors (KNN) to identify an optimal subset of extracted features, which are subsequently classified by a Deep Neural Network (DNN).
+The second strategy employs an end-to-end architecture, the Bidirectional Convolutional Hybrid Network (RHCB5), which integrates feature extraction and classification through convolutional, recurrent (Bi-LSTM), and fully connected layers in a unified model.
+The comparative analysis of both methodologies demonstrates their relative effectiveness in the detection and characterization of neurophysiologically relevant patterns within EEG signals, thereby providing a basis for identifying the specific advantages and inherent limitations of each approach to the quantitative analysis of complex neurophysiological data.
+\end{Abstract}
+
+\begin{keywords}
+    Artificial Intelligence; Genetic Algorithms; Machine Learning; Dragonfly Algorithm; RHCB5.
+\end{keywords}
+
+\begin{resumo}
+	A eletroencefalografia (EEG) é uma técnica não invasiva amplamente reconhecida para a captação da atividade elétrica cerebral e desempenha um papel fundamental no diagnóstico de distúrbios neurológicos, como a epilepsia.
+    Este estudo explora e contrasta duas estratégias computacionais para a detecção de crises epilépticas a partir de sinais de EEG.
+    A primeira estratégia baseia-se em um pipeline de aprendizado de máquina que utiliza o Algoritmo da Libélula Binário (BDA) em uma abordagem \textit{wrapper} guiada por k-Nearest Neighbors (KNN) para identificar um subconjunto ótimo de características, as quais são posteriormente classificadas por uma Rede Neural Profunda (DNN).
+    A segunda estratégia emprega uma arquitetura ponta a ponta, a Rede Híbrida Convolucional Bidirecional (RHCB5), que integra de forma conjunta a extração de características e a classificação por meio de camadas convolucionais, recorrentes (Bi-LSTM) e totalmente conectadas.
+    A análise comparativa das duas metodologias demonstra sua eficácia relativa na detecção e caracterização de padrões neurofisiologicamente relevantes em sinais de EEG, proporcionando, dessa forma, subsídios para a identificação das vantagens específicas e das limitações inerentes a cada abordagem na análise quantitativa de dados neurofisiológicos complexos.
+\end{resumo}
+
+\begin{palavras_chave}
+	Inteligência Artificial; Algoritmos Genéticos; Aprendizado de Máquina; Algoritmo da Libélula; RHCB5; 
+\end{palavras_chave}
+
+\end{frontmatter}
+
+\clearpage
+
+\section{Introdução}
+
+No domínio da engenharia biomédica, a análise automatizada de sinais eletroencefalográficos (EEG) para o diagnóstico da epilepsia representa um objetivo de pesquisa de considerável relevância \citep{Acharya2013,Subasi2019}. A literatura especializada aponta para duas estratégias computacionais predominantes na detecção de crises epilépticas. A primeira, uma abordagem clássica em pipeline, envolve a extração de um vasto conjunto de características do sinal de EEG, seguida por uma etapa de seleção otimizada por algoritmos meta-heurísticos — como os bioinspirados — para então alimentar um classificador de aprendizado de máquina \citep{Guyon2003,Emary2016,Mirjalili2016,Martinez-Vargas2022evaluation}. A segunda, uma abordagem integrada (end-to-end), utiliza arquiteturas de aprendizado profundo, como Redes Neurais Híbridas, que aprendem a extrair características e a classificar o sinal de forma conjunta e automatizada, diretamente a partir dos dados brutos \citep{Roy2019Deep,Lu2019Residual,Shoeibi2021}.
+
+Apesar do sucesso reportado por ambas as abordagens, poucos estudos realizam uma comparação direta que considere não apenas a acurácia final, mas também a robustez, a replicabilidade e a praticidade de implementação de cada método \citep{Acharya2021characterization, Martinez-Vargas2022evaluation}. Questões sobre a sensibilidade a hiperparâmetros e a dependência de descrições metodológicas detalhadas na literatura permanecem como desafios práticos \citep{Cherukuvada2023,Chantar2021Hybrid}.
+
+
+Diante disso, o presente estudo tem como objetivo realizar uma análise comparativa entre um pipeline de seleção de características utilizando o algoritmo BDA (\textit{Binary Dragonfly Algorithm}) \citep{Emary2016,Mirjalili2016} — operando sob uma estratégia de avaliação por \textit{proxy} (KNN) e classificação final via DNN — e um modelo de aprendizado profundo \textit{end-to-end}, a Rede Híbrida Convolucional Bidirecional (RHCB5) \citep{Maggioni2023, Maggioni2024}.
+Esta análise visa documentar o desempenho, avaliar a robustez de cada metodologia e contribuir com elucidações acerca das abordagens mais eficazes para a classificação de sinais de EEG no contexto da epilepsia.
+
+Este trabalho está estruturado em seis seções. A Seção 2 apresenta a fundamentação teórica, detalhando os conceitos de Eletroencefalograma (EEG), epilepsia e o processamento de sinais biomédicos. A Seção 3 revisa a literatura pertinente, discutindo as principais abordagens de seleção de atributos e classificação. A Seção 4 descreve os materiais e a metodologia empregada, enquanto a Seção 5 detalha a implementação e análise dos resultados obtidos. Finalmente, a Seção 6 apresenta as considerações finais e sugestões para trabalhos futuros.
+
+
+\section{Fundamentação teórica}
+
+Esta seção estabelece as bases teóricas essenciais, como o Eletroencefalograma (EEG), contextualiza a epilepsia e a importância do EEG como ferramenta diagnóstica. Por fim, discute-se o processamento de sinais de EEG e as principais técnicas de pré-processamento e extração de características.
+
+\subsection{Eletroencefalograma}
+O EEG é o registro da atividade elétrica espontânea gerada pelo cérebro \citep{Schomer2018}. Essa atividade é captada de maneira não invasiva por meio de eletrodos posicionados sobre o couro cabeludo. A origem desses sinais elétricos reside na somatória temporal da atividade pós-sináptica síncrona de grandes populações de neurônios corticais, principalmente os neurônios piramidais, alinhados perpendicularmente à superfície cortical \citep{Schomer2018}.
+
+A aquisição do EEG utiliza múltiplos eletrodos, cuja disposição geralmente segue padrões internacionais, como o sistema 10-20 \citep{Jasper1958, Husain2023}. Este sistema padroniza a localização dos eletrodos com base em medidas cranianas, assegurando a reprodutibilidade e a comparabilidade entre diferentes registros e indivíduos. Os eletrodos medem as diferenças de potencial elétrico entre diferentes pontos do couro cabeludo e uma referência. O sinal de EEG resultante é caracterizado por uma amplitude muito baixa, tipicamente na faixa de microvolts (µV). Devido a isso, o sinal é extremamente suscetível a ruídos e artefatos \citep{Pillai2007}, exigindo amplificadores e filtros durante a aquisição para otimizar a relação sinal-ruído.
+
+Clinicamente, o EEG é uma técnica diagnóstica de grande valor. Ele permite examinar o funcionamento elétrico do cérebro em tempo real, com alta resolução temporal, revelando-se uma ferramenta indispensável na investigação de diversas condições neurológicas e psiquiátricas. Suas aplicações abrangem o diagnóstico e classificação da epilepsia, a avaliação de lesões cerebrais, o monitoramento da profundidade anestésica, o estudo de distúrbios do sono, a investigação de doenças neurodegenerativas e o desenvolvimento de interfaces cérebro-computador (\textit{Brain-Computer Interface} - BCI) \citep{Qi2020}.
+
+A análise visual e computacional do EEG frequentemente se baseia na identificação e quantificação de diferentes padrões rítmicos, conhecidos como ondas cerebrais. A classificação mais comum dessas ondas é baseada em sua faixa de frequência. No entanto, outras características como localização no escalpo, amplitude, morfologia (forma da onda), continuidade (se o ritmo é contínuo ou intermitente), sincronia e simetria entre hemisférios, e reatividade a estímulos (como abertura e fechamento dos olhos) também são importantes para a interpretação \citep{Schomer2018}. 
+
+Entre os principais ritmos cerebrais observados em humanos está a onda Delta (\(\delta\)), com frequência entre 0.5 e 4 Hz, que é predominante durante o sono profundo em adultos e é normal em bebês e crianças pequenas. A onda Theta (\(\Theta\)), entre 4 e 8 Hz, é comum em crianças acordadas e em adultos durante o sono leve. A onda Alpha (\(\alpha\)), na faixa de 8 a 13 Hz, é o ritmo dominante em adultos normais em vigília relaxada, especialmente com os olhos fechados, sendo atenuada pela abertura dos olhos e esforço mental. As ondas Beta (\(\beta\)), com frequências entre 13 e 30 Hz, são comuns em adultos e crianças acordados e alertas \citep{Teplan2002}.
+
+As ondas Gamma (\(\gamma\)), com frequências acima de 30 Hz (podendo alcançar 80 Hz ou mais), estão associadas a funções cognitivas superiores, como percepção e atenção. Oscilações de alta frequência (HFOs), incluindo \textit{ripples} (80-200 Hz) e \textit{fast ripples}(200-500 Hz), são pesquisadas em relação à epilepsia por sua possível ligação com zonas epileptogênicas \citep{Pfurtscheller1999, Schomer2018, Husain2023, Engel2024}.
+
+Embora a presença ou ausência, focal ou generalizada, destas frequências na população possa significar diferentes patologias cerebrais, no contexto da epilepsia, nenhuma banda de frequência isolada é, por si só, a mais determinante para o diagnóstico. A relevância reside, na verdade, em como a atividade dentro dessas bandas se altera e, principalmente, na ocorrência de padrões anormais específicos que podem ou não se sobrepor a essas faixas de frequência clássicas.
+
+\subsection{Definição e Classificação da Epilepsia}
+
+A Liga Internacional Contra a Epilepsia (ILAE - \textit{International League Against Epilepsy}) é a principal organização mundial que estabelece as definições e classificações para crises epilépticas e epilepsias, buscando uma linguagem comum para a prática clínica e a pesquisa \citep{epilepsyfoundation_whatis}. Em 2005, a ILAE propôs uma definição conceitual onde uma crise epiléptica é definida como ``a ocorrência transitória de sinais e/ou sintomas devidos à atividade neuronal excessiva ou síncrona anormal no cérebro'' \citep{Engel2024}. A epilepsia, por sua vez, foi definida conceitualmente como ``uma afecção do cérebro caracterizada por uma predisposição duradoura para gerar crises epilépticas e pelas consequências neurobiológicas, cognitivas, psicológicas e sociais desta condição''. A definição de epilepsia, neste contexto, requer a ocorrência de pelo menos uma crise epiléptica. As definições passam por revisões constantes, e foram atualizadas nos últimos anos \citep{Scheffer2017, Beniczky2025}.
+
+A estrutura de classificação do tipo de crise epiléptica de 2025 da ILAE baseia-se primariamente no início da crise, e identifica quatro classes principais: crises de início focal (que se originam em uma região cortical delimitada), crises de início generalizado (envolvendo ambos os hemisférios simultaneamente), crises de início desconhecido e não classificadas \citep{Beniczky2025}. Na \autoref{tab:epilepsia_basica_coluna}, há um resumo da classificação dos tipos de crise. Crises focais podem ser motoras ou não motoras e podem progredir para generalização bilateral. Crises generalizadas abrangem tipos como tônico-clônicas, ausências típicas/atípicas, mioclônicas, tônicas ou atônicas.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Classificação ILAE - Tipos Básicos de Crises de Epilepsia (adaptado de \cite{epilepsyfoundation_whatis})}
+    \label{tab:epilepsia_basica_coluna}
+    \begin{tabular}{ll}
+        \toprule
+        \textbf{Classe Principal} & \textbf{Tipos Básicos / Agrupamentos} \\
+        \midrule
+        % --- Crises Focais ---
+        \textbf{Focal} & Consciência Preservada \\
+                       & Consc. Comprometida \\
+                       & Evolução Tônico-Clônica Bilat. \\
+        \midrule
+        % --- Crises Generalizadas ---
+        \textbf{Generalizado} & Ausência (Grupo) \\
+                              & Tônico-Clônica Generalizada \\
+                              & Outras (Grupo: Mioclônica, etc.) \\
+        \midrule
+        % --- Crises de Início Desconhecido ---
+        \textbf{Desconhecido} & Consc. Preservada \\
+         (Focal ou Gen.)      & Consc. Comprometida \\
+                              & Tônico-Clônica Bilateral \\
+        \midrule
+        % --- Crises Não Classificadas ---
+        \textbf{Não Classificada} & Informação insuficiente \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+Além disso, as epilepsias em si são classificadas com base no quadro clínico-eletroencefalográfico e etiológico (por exemplo, epilepsias focais versus generalizadas ou síndromes epilépticas definidas) conforme as recomendações atuais \citep{Beniczky2025}. 
+
+\subsection{Processamento de Sinais EEG e sua Relevância na Avaliação da Epilepsia}
+
+O processamento de sinais EEG para avaliação da epilepsia enfrenta desafios significativos. Um dos maiores são os artefatos – sinais elétricos indesejados de fontes fisiológicas (atividade muscular, ocular, cardíaca, sudorese) ou não fisiológicas (movimento de eletrodos, interferência da rede elétrica de 60 Hz) – que frequentemente possuem amplitudes superiores ao sinal de interesse e podem mimetizar padrões patológicos como descargas epilépticas, levando a interpretações errôneas \citep{Subasi2019, Pillai2007, Islam2018}. Adicionalmente, a baixa resolução espacial do EEG, devido à condução de volume pelo crânio e tecidos moles, reflete a atividade somada de grandes áreas corticais, limitando a localização precisa da origem da atividade, embora técnicas de análise de fontes possam fornecer estimativas \citep{Schomer2018}.
+
+Os sinais EEG são também inerentemente não estacionários, com suas propriedades estatísticas (como média, variância e espectro de frequência) mudando ao longo do tempo, o que reflete a natureza dinâmica da atividade cerebral em resposta a diferentes estados mentais, níveis de alerta e processos cognitivos. Os perfis de EEG também podem variar consideravelmente entre diferentes indivíduos, mesmo em condições semelhantes, devido a fatores anatômicos e fisiológicos. Ademais, o EEG de um mesmo indivíduo pode variar dependendo do estado de alerta, fadiga, uso de medicamentos e outros fatores, dificultando o desenvolvimento de modelos generalizáveis \citep{Schomer2018}.
+
+Para mitigar esses problemas, etapas de pré-processamento são indispensáveis, incluindo filtragem (passa-banda, \textit{notch} para remoção de interferência da rede elétrica) e técnicas de supressão de artefatos. Após o pré-processamento, a extração de características do sinal (decomposição) visa transformar os segmentos de EEG em um conjunto de valores numéricos que capturam informações discriminativas. Estas podem ser extraídas em diferentes domínios \citep{Welch1967, Pfurtscheller1999}:
+\begin{itemize}
+    \item Tempo: Inclui medidas estatísticas como média, variância e parâmetros de Hjorth.
+    \item Frequência: Utiliza-se a Transformada Rápida de Fourier (\textit{Fast Fourier Transform} - FFT) para obter a Densidade Espectral de Potência (\textit{Power Spectral Density} - PSD), revelando a distribuição de energia do sinal pelas bandas de frequência \citep{Welch1967, Pfurtscheller1999}.
+    \item Tempo-Frequência: Técnicas como a Transformada Wavelet (\textit{Wavelet Transform} - WT), incluindo suas variantes Discreta e Estacionária, são amplamente utilizadas para analisar sinais não estacionários, fornecendo informações sobre a frequência e sua localização temporal.
+    \item Complexidade e Não Linearidade: Medidas de entropia quantificam a regularidade e complexidade dos sinais EEG, auxiliando na diferenciação de estados cerebrais.
+\end{itemize}
+
+\begin{figure}%[b!]
+	\centering
+	\includegraphics[width=.5\textwidth]{eeg-epilepsia-fig-1.png}
+	\caption{Descargas interictais epilépticas em múltiplos canais de EEG. (A) Traçados de múltiplos canais com marcadores laranja para descargas; (B) Taxa de DEIs por minuto dos dois hemisférios; (C) Mapa das posições dos eletrodos no cérebro; (D) espectrograma de um eletrodo.\citep{Falach2024}}
+	\label{fig:eeg:wide}
+\end{figure}
+
+Na avaliação da epilepsia, as Descargas Epileptiformes Interictais (DEIs) – eventos transitórios como espículas, ondas agudas ou complexos espícula-onda (ilustradas na \autoref{fig:eeg:wide}) – são o marcador eletrofisiológico mais direto \citep{Schomer2018, Noachtar2021, Engel2024}. O padrão e a distribuição das DEIs são cruciais para diferenciar epilepsias focais (descargas focais) e generalizadas (descargas de espícula-onda generalizadas e síncronas), distinção que orienta o tratamento e o prognóstico \citep{Engel2024}.
+
+A complexidade da interpretação do EEG em pacientes com epilepsia, que pode variar desde registros normais até a presença marcante de artefatos \citep{Pillai2007}, juntamente com os desafios de ruído, não estacionariedade e baixa resolução espacial, sublinha a necessidade de algoritmos de Aprendizado de Máquina (\textit{Machine Learning} - ML) e Aprendizado Profundo (\textit{Deep Learning} - DL) robustos. Tais algoritmos devem ser capazes de lidar com a incerteza e identificar características discriminativas e variáveis. Etapas de pré-processamento, remoção de artefatos e otimização para seleção de características significativas são cruciais antes de qualquer análise ou classificação \citep{Guyon2003, Dash1997}.
+
+
+\section{Revisão de literatura}
+
+Esta revisão discute a área de seleção de características de EEG, algoritmos bioinspirados e seus usos e, em seguida, compara duas filosofias dominantes: o pipeline modular clássico e o paradigma \textit{end-to-end}. São avaliadas técnicas fundamentais, implementações de estado-da-arte e os \textit{trade-offs} de cada abordagem, com foco não só em acurácia, mas em robustez, praticidade e reprodutibilidade.
+
+\subsection{Abordagem em Pipeline: Seleção de Atributos Otimizada por Meta-heurísticas}
+A abordagem em pipeline segmenta o complexo problema da classificação de EEG em uma série de subproblemas mais gerenciáveis. Cada etapa é projetada para uma tarefa específica, e o sucesso do sistema como um todo depende da eficácia de cada um desses módulos interconectados. O ponto crucial dessa metodologia reside na transformação do sinal bruto em uma representação compacta e informativa, um processo que culmina na seleção inteligente de características antes da classificação final.
+
+\subsubsection{Extração de Atributos de EEG}
+
+Os sinais de EEG brutos, sendo séries temporais de alta frequência, não são diretamente adequados como entrada para classificadores de aprendizado de máquina tradicionais \citep{Lotte2018}.
+A primeira etapa essencial, portanto, é a extração de atributos, que consiste em transformar segmentos do sinal em um conjunto de descritores numéricos — ou características (\textit{features}) — que capturam informações sobre o estado cerebral \citep{Alotaiby2015}. Para analisar sinais não estacionários como o EEG, técnicas no domínio do tempo-frequência são particularmente eficazes. A Transformada Wavelet Estacionária (\textit{Stationary Wavelet Transform} - SWT) é amplamente utilizada por sua capacidade de decompor o sinal em diferentes bandas de frequência, preservando a informação temporal, ao contrário de métodos como a Transformada de Fourier \citep{Adeli2003, Subasi2010}.
+
+A partir dos coeficientes gerados por essa decomposição, é possível calcular uma variedade de características estatísticas (como média, variância, assimetria e curtose), de complexidade e não linearidade (como entropia) e parâmetros de Hjorth (atividade, mobilidade e complexidade), que quantificam diferentes aspectos da dinâmica do sinal \citep{Hjorth1970, Acharya2013EEG}.Embora esse processo enriqueça a representação do sinal, ele frequentemente resulta em um espaço de características de altíssima dimensão, com centenas ou até milhares de atributos por segmento de EEG. Este fenômeno é conhecido como a ``maldição da dimensionalidade'' (\textit{curse of dimensionality}) \citep{bellman2003dynamic, Guyon2003}.
+
+Um número excessivo de características, muitas redundantes ou irrelevantes para a tarefa de classificação, pode degradar significativamente o desempenho do classificador, aumentar o custo computacional do treinamento e, mais criticamente, levar ao sobreajuste (\textit{overfitting}), onde o modelo aprende o ruído específico do conjunto de treinamento em vez dos padrões patológicos subjacentes, resultando em baixa capacidade de generalização para novos dados \citep{Guyon2003, Dash1997}. Essa problemática estabelece a necessidade imperativa da etapa subsequente: a seleção de atributos.
+
+\subsubsection{Seleção de Atributos Otimizada por Algoritmos Bioinspirados}
+
+A seleção de atributos (\textit{Feature Selection} - FS) visa identificar o subconjunto de características mais informativo e compacto, eliminando a redundância e a irrelevância \citep{Guyon2003, Dash1997}. Contudo, encontrar o subconjunto ótimo de $m$ características a partir de um conjunto original de $n$ é um problema de otimização combinatória. A busca exaustiva por todas as combinações possíveis é computacionalmente inviável, pois o número de subconjuntos cresce exponencialmente, caracterizando-o como um problema NP-difícil (\textit{NP-hard}) \citep{Molina2002}.
+
+Para contornar essa inviabilidade, algoritmos de otimização meta-heurísticos oferecem uma solução prática e poderosa \citep{Becerra-Rozas2023}. Esses métodos de busca estocástica, frequentemente inspirados em fenômenos naturais ou processos biológicos, são projetados para explorar eficientemente espaços de busca vastos e complexos, encontrando soluções de alta qualidade em um tempo computacional razoável. O uso de algoritmos bioinspirados em sinais de EEG é uma prática bem estabelecida na literatura, com exemplos proeminentes incluindo Algoritmos Genéticos (Genetic Algorithms - GA), que mimetizam o processo de evolução natural \citep{Subasi2007}, e a Otimização por Enxame de Partículas (Particle Swarm Optimization - PSO), inspirada no comportamento social de bandos de pássaros ou cardumes de peixes \citep{kennedy1995pso}. Ambos têm sido aplicados para identificar subconjuntos de características informativas de EEG \citep{Adam2014, Wang2022}.
+
+
+\subsubsection{Classificação com Redes Neurais Profundas (DNNs)}
+
+A etapa final do pipeline é a classificação, onde um modelo de aprendizado de máquina aprende a mapear o subconjunto de características otimizado para os rótulos de classe correspondentes (por exemplo, normal, interictal, ictal). As Redes Neurais Profundas (\textit{Deep Neural Networks} - DNNs), especificamente os Perceptrons Multicamadas (\textit{Multi-Layer Perceptrons} - MLPs), são uma escolha poderosa para esta tarefa. Elas possuem múltiplas camadas de neurônios artificiais empilhadas entre a camada de entrada e saída \citep{Goodfellow2016}. Cada camada aplica uma transformação linear aos dados que recebe, seguida por uma função de ativação, permitindo que a rede ``aprenda'' representações complexas dos dados. Os parâmetros dessas transformações (pesos e vieses) são ajustados durante o processo de treinamento através de algoritmos como a retropropagação (\textit{backpropagation}), que minimizam uma função de custo que quantifica o erro do modelo em relação aos dados de treinamento rotulados. 
+
+No contexto da análise de EEG, as DNNs oferecem vantagens significativas, entre elas o aprendizado automático de características (capacidade de aprender características relevantes diretamente dos dados brutos ou minimamente pré-processados)\citep{Roy2019Deep} e a modelagem de relações complexas e padrões sutis nos sinais, que podem ser difíceis de capturar com modelos lineares \citep{Lu2019Residual}). Com suas múltiplas camadas ocultas e funções de ativação não lineares, as DNNs são capazes de aprender fronteiras de decisão altamente complexas e não lineares, modelando relações intrincadas entre as características de entrada e as classes de saída \citep{Lu2019Residual}.
+
+O uso de DNNs também apresenta desafios, já que requerem grandes quantidades de dados de treinamento rotulados para aprender eficazmente e evitar o \textit{overfitting}, o que pode ser uma limitação em aplicações médicas onde dados marcados podem ser escassos. O treinamento de DNNs também é computacionalmente oneroso, exigindo hardware dedicado e extensos períodos de treinamento.
+
+\subsection{Abordagem Integrada: Aprendizado de Representações \textit{End-to-End}}
+
+Em contraste com a natureza sequencial e modular do pipeline, a abordagem de ponta a ponta (\textit{end-to-end}) representa uma mudança de paradigma na forma como os problemas de aprendizado de máquina são concebidos. Impulsionada por arquiteturas de aprendizado profundo, essa filosofia busca unificar múltiplas etapas de processamento em um único modelo unificado.
+
+\subsubsection{Paradigma de Aprendizado \textit{End-to-End}}
+
+A metodologia ponta-a-ponta propõe o treinamento de um modelo que aprende um mapeamento direto da entrada bruta (ou minimamente processada) para a saída desejada, eliminando a necessidade de etapas intermediárias explícitas, como a engenharia e seleção manual de características. O modelo aprende, de forma automática e orientada pelos dados, uma hierarquia de representações. As camadas iniciais aprendem a detectar características de baixo nível (como oscilações em um sinal), enquanto as camadas mais profundas combinam essas características para formar conceitos mais abstratos e complexos, relevantes para a tarefa de classificação final \citep{Goodfellow2016}.
+
+A principal vantagem dessa abordagem é a redução da dependência do conhecimento de domínio e do esforço manual necessários para projetar extratores de características eficazes. Isso não apenas automatiza o processo, mas também abre a possibilidade de o modelo descobrir padrões e biomarcadores novos e mais complexos do que aqueles que seriam concebidos por um especialista humano.
+No entanto, essa automação vem com um custo significativo: a perda de interpretabilidade. As características aprendidas por uma rede profunda são frequentemente distribuídas por milhares de parâmetros e não são facilmente compreensíveis por humanos, o que leva ao conhecido problema da ``caixa-preta'' (\textit{black box}), uma consideração crítica em domínios de alto risco como a medicina \citep{Sturm2016Interpretable}.
+
+\subsubsection{Arquiteturas Híbridas para Sinais Espaço-Temporais}
+
+Os sinais de EEG possuem uma natureza dupla: eles contêm padrões morfológicos ou ``espaciais'' locais dentro de uma janela de tempo (por exemplo, a forma de um complexo espícula-onda) e, ao mesmo tempo, dependências temporais cruciais que se desenrolam ao longo de sequências de janelas. Uma arquitetura de rede neural que se baseia em um único tipo de camada pode não ser ótima para capturar ambas as facetas dessa informação. Por essa razão, arquiteturas híbridas que combinam diferentes tipos de camadas neurais tornaram-se o estado da arte para a análise de séries temporais complexas \citep{Roy2019Deep, Shoeibi2021, Zhang2024Review}. O duo sinérgico mais comum nessas arquiteturas é a combinação de Redes Neurais Convolucionais (\textit{Convolutional Neural Networks} - CNNs) e Redes Neurais Recorrentes (\textit{Recurrent Neural Networks} - RNNs) \citep{Roy2019Deep, Shoeibi2021, Zhang2024Review}.
+
+Uma CNN emprega convoluções unidimensionais (1D-CNNs), essas camadas atuam como um banco de filtros aprendíveis que deslizam sobre o sinal \citep{Shoeibi2021}.
+Cada filtro se especializa em detectar um padrão morfológico local específico, como picos agudos, oscilações rítmicas ou outras formas de onda características.
+Uma propriedade fundamental da convolução é a invariância à translação, o que significa que a rede pode detectar esses padrões independentemente de onde eles ocorram na janela de tempo \citep{Goodfellow2016}. As CNNs, portanto, são extratores de características locais altamente eficazes \citep{Shoeibi2021, Roy2019Deep, Khan2023}.
+
+Após as CNNs extraírem quais padrões estão presentes em cada segmento do sinal, as RNNs são usadas para analisar a sequência desses padrões ao longo do tempo. Variantes avançadas como as redes de Memória de Longo Curto Prazo (\textit{Long Short-Term Memory} - LSTM) e suas versões Bidirecionais (Bi-LSTM) são particularmente adequadas para essa tarefa. Elas são projetadas para capturar dependências temporais de longo alcance, mantendo uma ``memória'' do que viram anteriormente \citep{Goodfellow2016, Roy2019Deep}. Uma Bi-LSTM processa a sequência em ambas as direções (do passado para o futuro e do futuro para o passado), permitindo que o modelo tome decisões com base no contexto completo de um evento no sinal.
+
+\subsection{Metodologia de busca e seleção de Trabalhos Relacionados}
+
+A revisão da literatura foi estruturada para fundamentar a comparação entre as duas principais abordagens computacionais para detecção de epilepsia em sinais de EEG: a abordagem em pipeline e a abordagem integrada.
+
+A pesquisa bibliográfica foi conduzida entre Fevereiro e Maio de 2025 nas bases de dados científicas \textit{IEEE Xplore, Science Direct, PubMed, Springer, Arxiv e Google Scholar}. As buscas utilizaram combinações de palavras-chave, incluindo: \textit{``epilepsy detection'', ``EEG signal processing'', ``feature selection'', ``metaheuristic optimization'', ``deep learning'', ``convolutional neural network'', ``recurrent neural network'', ``CNN-LSTM'' e ``end-to-end EEG classification''}. Os critérios de inclusão foram: (1) artigos originais publicados entre 2015 e 2025; (2) estudos que aplicam algoritmos de seleção de características ou modelos de aprendizado profundo (especialmente arquiteturas híbridas, consideradas estado-da-arte no campo de ML) para a classificação de sinais de EEG relacionados à epilepsia; (3) trabalhos que descrevem claramente a metodologia e apresentam métricas de desempenho quantitativas.
+
+O processo de triagem inicial focou em identificar os trabalhos mais representativos de cada abordagem. Para a estratégia de pipeline, foram selecionados estudos que aplicam meta-heurísticas para otimizar a seleção de um subconjunto de características extraídas manualmente, com utilização adicional de um classificador ML final. Para a estratégia \textit{end-to-end}, foram priorizados artigos que empregam arquiteturas de aprendizado profundo, como redes convolucionais e recorrentes, para automatizar a extração de características. A análise final concentrou-se nos trabalhos que permitiram contextualizar as vantagens, desvantagens e desafios de cada metodologia, justificando assim a necessidade de uma comparação direta e controlada como a proposta neste estudo.
+
+\subsection{Discussão de Trabalhos Relacionados}
+
+A análise detalhada das duas abordagens predominantes revela um cenário de pesquisa rico e complexo, com compromissos fundamentais entre automação, interpretabilidade, desempenho e aplicabilidade clínica. Esta seção final sintetiza as observações da literatura para construir o argumento central que justifica a comparação direta proposta neste trabalho.
+
+\subsubsection{Abordagem em pipeline}
+A literatura que emprega a abordagem em pipeline para a análise de EEG é vasta, com grande parte da pesquisa focada na otimização da etapa de seleção de características (FS) \citep{Guyon2003, Martinez-Vargas2022evaluation}. Historicamente, meta-heurísticas clássicas como Algoritmos Genéticos (GA) \citep{Subasi2007} e Otimização por Enxame de Partículas (PSO), em suas versões binárias (BPSO) \citep{Kennedy1997, Li2024pmpso}, dominaram este cenário, sendo aplicadas para identificar subconjuntos de características informativas de EEG \citep{Adam2014, Wang2022}.
+
+Mais recentemente, algoritmos como o da Libélula (\textit{Dragonfly Algorithm} - DA) \citep{Mirjalili2016} e sua versão binária (BDA) \citep{Emary2016} emergiram como alternativas robustas. O DA, proposto por \cite{Mirjalili2016}, é uma técnica de inteligência de enxame que se inspira em comportamentos estáticos (caça) e dinâmicos (migração) das libélulas. Para aplicar o DA a problemas de seleção de características, a versão binária (BDA) \citep{Emary2016} foi desenvolvida. Nela, as posições são vetores binários (onde '1' indica uma característica selecionada e '0' indica não selecionada), e a atualização da posição é convertida em probabilidades por meio de funções de transferência (ex. sigmoides) para guiar a decisão de alterar o estado (0 ou 1) de cada característica \citep{Emary2016}.
+Estudos comparativos diretos têm validado a eficácia do BDA frente aos seus predecessores; \cite{Mafarja2017}, por exemplo, demonstraram que o BDA superou o BPSO e o GA em 18 \textit{datasets} da UCI, tanto em acurácia de classificação quanto na compactação do subconjunto de características. No domínio biomédico, a pesquisa também tem explorado hibridizações para refinar o BDA, como o BDA com \textit{Simulated Annealing} (BDA-SA) para escapar de ótimos locais \citep{Chantar2021Hybrid} ou o BDA com Evolução Diferencial (BDA-DE) para otimizar a seleção de atributos de EEG na detecção de epilepsia \citep{AlGhamdi2024}.
+
+No presente contexto, o trabalho de \cite{Yogarajan2023} é de particular relevância, pois aplica o pipeline BDA + DNN especificamente à detecção de epilepsia no \textit{dataset} de Bonn \citep{UKB_EEGDataDownload}. Os autores extraíram 143 características de cada segmento de EEG utilizando a SWT e, em seguida, empregaram o BDA para identificar o subconjunto ótimo. Finalmente, utilizaram uma rede neural profunda (DNN) para a classificação. Os autores relataram um desempenho notável, alcançando 100\% de acurácia, sensibilidade e especificidade após o BDA reduzir o espaço de características em 85\% (de 143 para 20,8). Este resultado, que representa um desempenho de ponta para a abordagem em pipeline, estabelece o BDA + DNN como um competidor ideal e um representante metodológico de alto desempenho para a presente análise comparativa.
+
+\subsubsection{Abordagem End-to-end}
+Na abordagem integrada, a literatura recente sobre análise de EEG é dominada por arquiteturas de aprendizado profundo que unificam a extração de características e a classificação \citep{Roy2019Deep, Shoeibi2021}. Como apontado por revisões sistemáticas \citep{Zhang2024Review}, um paradigma prevalente e de estado-da-arte consiste em arquiteturas híbridas que combinam CNNs com RNNs.
+
+Nesses trabalhos, as camadas 1D-CNN atuam como extratores de padrões locais e morfológicos do sinal bruto, enquanto as camadas RNN, tipicamente LSTM ou suas variantes bidirecionais (Bi-LSTM), modelam as dependências temporais de longo prazo entre esses padrões \citep{Lu2019Residual}. Diversos estudos recentes validam esta sinergia para a detecção de epilepsia. \cite{Wang2024}, por exemplo, empregaram um modelo 1D-CNN–BiLSTM para classificação de EEG, e \cite{Khan2023} utilizaram uma arquitetura similar, destacando sua eficácia na captura de informações espaço-temporais. Outras variações robustas incluem modelos como o \textit{MP-SeizNet} (que utiliza uma CNN para características extraídas por \textit{wavelets} e uma Bi-LSTM para o sinal bruto) \citep{Wang2024}, ou modelos que integram mecanismos de atenção para focar nas partes mais relevantes do sinal \citep{Guhdar2025Hybrid}.
+
+Como representante desta abordagem, foi selecionada a Rede Híbrida Convolucional Bidirecional (RHCB5), desenvolvida por \cite{Maggioni2024, Maggioni2023}. Esta arquitetura, embora originalmente proposta e validada com sucesso para a detecção de arritmias cardíacas em sinais de Eletrocardiograma (ECG), é um exemplo canônico da arquitetura (CNN-BiLSTM) de estado da arte identificada na literatura. Sua concepção utiliza um bloco convolucional inicial (composto por camadas 1D-CNN e \textit{pooling}) para extrair mapas de características locais do sinal, que são então processados por uma camada Bi-LSTM para modelar o contexto temporal, e finalmente, camadas densas realizam a classificação \citep{Maggioni2024}. A seleção deste modelo permite, portanto, uma comparação direta entre a abordagem de pipeline otimizada (BDA+DNN) e uma arquitetura \textit{end-to-end} representativa, avaliando também a transferibilidade de domínio de um modelo de ponta de sinais de ECG para a análise de EEG.
+
+\subsubsection{Síntese das Abordagens}
+
+As duas metodologias representam filosofias fundamentalmente diferentes para resolver o mesmo problema. A abordagem em pipeline decompõe o problema em etapas discretas, cada uma otimizada separadamente, enquanto a abordagem \textit{end-to-end} busca uma solução holística e integrada. A \autoref{tab:comparacao} resume os principais compromissos e características de cada paradigma.
+
+\begin{table*}[ht]
+\centering
+\caption{Comparação entre abordagem pipeline e \textit{end-to-end}.}
+\label{tab:comparacao}
+\resizebox{\textwidth}{!}{
+\begin{tabular}{p{5.2cm} p{5.2cm} p{5.2cm}}
+\toprule
+\textbf{Característica} & \textbf{Pipeline} & \textbf{End-to-End} \\
+\midrule
+Extração de Atributos &
+Manual, baseada em conhecimento de domínio (e.g., SWT, estatística). &
+Automática, aprendida a partir dos dados (e.g., camadas convolucionais). \\
+\midrule
+Seleção de Atributos &
+Explícita, otimizada por meta-heurísticas (e.g., BDA). &
+Implícita, integrada ao aprendizado da rede. \\
+\midrule
+Classificador &
+Opera em espaço de atributos de baixa dimensão e semanticamente rico. &
+Opera em representações latentes de alta dimensão e abstratas. \\
+\midrule
+Interpretabilidade &
+Alta. O subconjunto de atributos pode gerar insights clínicos. &
+Baixa (``caixa-preta''). Difícil rastrear e explicar decisões. \\
+\midrule
+Dependência de Domínio &
+Alta. Requer expertise para engenharia de atributos. &
+Baixa. Reduz a necessidade de engenharia manual. \\
+\midrule
+Automação do Pipeline &
+Baixa. Múltiplas etapas de design e otimização. &
+Alta. Um único modelo aprende todas as etapas conjuntamente. \\
+\midrule
+Custo Computacional (Inferência) &
+Geralmente baixo, pois o modelo final opera com poucos atributos. &
+Potencialmente alto, dependendo da arquitetura. \\
+\midrule
+Custo Computacional (Desenvolvimento) &
+Alto, devido ao processo iterativo da seleção de atributos. &
+Alto, devido ao uso de grandes volumes de dados e longos treinamentos. \\
+\bottomrule
+\end{tabular}
+}
+\end{table*}
+
+As etapas específicas e os métodos utilizados podem variar dependendo da aplicação, dos dados disponíveis e dos objetivos da análise. A abordagem em pipeline oferece transparência e a possibilidade de incorporar conhecimento especializado, ao custo de um maior esforço de desenvolvimento manual. Em contrapartida, a abordagem \textit{end-to-end} oferece um alto grau de automação e o potencial para descobrir características originais, ao custo da interpretabilidade.
+
+\section{Materiais e Métodos}
+
+Esta seção descreve os recursos computacionais, o conjunto de dados e o desenho experimental empregados para a comparação direta duas abordagens de classificação de EEG. O desenho experimental visa uma comparação direta e pareada entre a abordagem em \textit{pipeline} (BDA-KNN-DNN) e a abordagem \textit{end-to-end} (RHCB5), conforme estabelecido na \textbf{Seção 3}. O experimento foi projetado para garantir a reprodutibilidade e a robustez estatística, utilizando um método de execução pareada.
+
+O fluxo experimental geral consiste em 30 execuções independentes para cada abordagem. Um aspecto crucial da metodologia é o controle de aleatoriedade: para cada uma das 30 execuções, uma semente aleatória (\textit{seed}) única é gerada e compartilhada entre ambos as abordagens \citep{Subasi2019, Goodfellow2016}. Isso assegura que a estratificação dos dados entre treinamento, validação e teste seja idêntica para os dois modelos em cada iteração, permitindo uma comparação estatística direta (\textit{paired test}) e eliminando o viés de amostragem. O fluxo experimental geral está ilustrado na \autoref{fig:fluxo_experimental}.
+
+% Placeholder para a imagem.
+
+\subsection{Materiais}
+
+Nesta etapa, são apresentados os recursos fundamentais utilizados para o desenvolvimento e validação das estratégias computacionais propostas. A descrição abrange o ecossistema de software e a base de dados de EEG selecionada, detalhando suas características e a definição das classes para o problema de detecção de epilepsia.
+
+\subsubsection{Ambiente de Software e Bibliotecas}
+
+A implementação foi realizada na linguagem Python, escolhida por sua predominância na ciência de dados e pelo vasto ecossistema de bibliotecas de aprendizado profundo \citep{Roy2019Deep, Shoeibi2021}. Para a construção, treinamento e avaliação das Redes Neurais (tanto a DNN do pipeline quanto a RHCB5), utilizou-se o \textit{framework} \textbf{TensorFlow}\footnote{\url{https://www.tensorflow.org}} e sua interface de alto nível \textbf{Keras}\footnote{\url{https://keras.io}}.
+
+A manipulação de dados e operações matriciais foram suportadas pelas bibliotecas \textbf{Pandas}\footnote{\url{https://pandas.pydata.org}} e \textbf{NumPy}\footnote{\url{https://numpy.org}}. O pré-processamento e a análise estatística contaram com o auxílio do \textbf{SciPy}\footnote{\url{https://scipy.org}} (para filtragem digital) e do \textbf{Scikit-learn}\footnote{\url{https://scikit-learn.org}}, este último utilizado para a divisão estratificada dos dados, cálculo de métricas de desempenho e implementação do classificador \textit{k-Nearest Neighbors} (KNN) na etapa de otimização.
+
+A extração de características no domínio tempo-frequência foi realizada via \textbf{PyWavelets}\footnote{\url{https://pywavelets.readthedocs.io}}. Para visualização dos resultados e análise exploratória, empregaram-se as bibliotecas \textbf{Matplotlib}\footnote{\url{https://matplotlib.org}} e \textbf{Seaborn}\footnote{\url{https://seaborn.pydata.org}}. Por fim, técnicas de Inteligência Artificial Explicável (XAI) foram aplicadas utilizando a biblioteca \textbf{SHAP}\footnote{\url{https://shap.readthedocs.io}}.
+
+
+\subsubsection{Conjunto de Dados}
+
+O estudo utiliza exclusivamente o conjunto de dados de EEG da Universidade de Bonn \citep{UKB_EEGDataDownload}, uma referência consolidada na literatura para validação de algoritmos de detecção de epilepsia. Foram selecionados os subconjuntos A, D e E, compostos por 100 segmentos cada, totalizando 300 segmentos de sinal.
+
+Cada segmento possui duração de 23,6 segundos e foi registrado através de um sistema de canal único, amostrado a 173,61 Hz, resultando em 4097 amostras espectrais. As classes foram definidas conforme a prática estabelecida por \cite{Yogarajan2023}: o \textbf{Conjunto A} representa a classe Normal (voluntários saudáveis com olhos abertos); o \textbf{Conjunto D} refere-se à classe Interictal (pacientes epilépticos fora do momento de crise); e o \textbf{Conjunto E} corresponde à classe Ictal (atividade de convulsão).
+
+\todo[inline]{COmentários sobre os ietns de classe.}
+
+\subsection{Métodos}
+
+O procedimento metodológico, replicado em cada uma das 30 iterações, divide-se em pré-processamento, divisão de dados e execução dos fluxos específicos de cada abordagem.
+
+\subsubsection{Pré-processamento e Divisão dos Dados}
+
+Para garantir a equidade na comparação, ambos os modelos recebem dados submetidos ao mesmo tratamento inicial.
+Primeiramente, realiza-se o ajuste de sinal, onde os segmentos originais de 4097 amostras são truncados para 4096 amostras, facilitando operações de decomposição que requerem potências de dois.
+Na sequência, aplica-se um filtro Butterworth \citep{Sanei2007, Subasi2019} passa-baixas de quarta ordem com frequência de corte em 40 Hz, visando atenuar ruídos de alta frequência e artefatos musculares.
+Por fim, os sinais são normalizados para o intervalo $[-1, 1]$, garantindo a estabilidade numérica durante o treinamento das redes neurais \citep{Islam2018, Yogarajan2023}.
+
+Após o tratamento, o conjunto total de 300 segmentos é particionado de forma estratificada. Destinam-se 70\% dos dados (210 segmentos) para o treinamento, 15\% (45 segmentos) para a validação durante as épocas de aprendizado e os 15\% restantes (45 segmentos) constituem o conjunto de teste, utilizado exclusivamente para a avaliação final das métricas.
+
+\subsubsection{Fluxo A: Pipeline BDA-KNN-DNN}
+
+Este fluxo adota uma arquitetura modular clássica baseada na proposta de \cite{Yogarajan2023}, porém adaptada para otimização computacional.
+Inicialmente, a etapa de \textbf{Extração de Características} utiliza a Transformada Wavelet Estacionária (SWT) para decompor o sinal em bandas de frequência, gerando um vetor de atributos estatísticos e de complexidade por segmento.
+Subsequentemente, na fase de \textbf{Seleção de Características}, aplica-se o Algoritmo da Libélula Binário (BDA) sobre o conjunto de treinamento.
+O objetivo desta etapa é identificar um subconjunto reduzido de atributos que maximize a separabilidade das classes. Para tal, emprega-se uma estratégia \textit{wrapper} onde um classificador k-Nearest Neighbors (KNN) atua como função de avaliação (\textit{fitness function}) para guiar a busca meta-heurística, estimando a qualidade dos subconjuntos sem o custo proibitivo de treinar uma rede neural a cada iteração.
+Por fim, o subconjunto de atributos considerado ótimo pelo avaliador KNN alimenta a etapa de \textbf{Classificação Final}, executada por uma Rede Neural Profunda (DNN - \textit{Multilayer Perceptron}) configurada para distinguir as três classes alvo com maior capacidade de generalização.
+
+\subsubsection{Fluxo B: Abordagem RHCB5}
+O segundo fluxo emprega a arquitetura \textit{end-to-end} RHCB5 \citep{Maggioni2024}, que processa o sinal bruto sem a necessidade de extração prévia de características manuais. A arquitetura é composta por um bloco inicial de Redes Neurais Convolucionais (1D-CNNs) responsáveis pela extração automática de mapas de características morfológicas locais. A sequência de características extraída é então processada por camadas de Memória de Longo Curto Prazo Bidirecional (Bi-LSTM), projetadas para modelar dependências temporais de longo prazo no sinal. A classificação final é realizada por camadas densas (\textit{fully connected}). Diferente da abordagem original aplicada a ECGs, este estudo adapta a entrada da rede para acomodar a resolução temporal e espectral específica dos sinais de EEG.
+
+\subsection{Avaliação e Análise Estatística}
+A avaliação de desempenho baseia-se nas predições realizadas sobre o conjunto de teste. São calculadas métricas globais, como Acurácia, e métricas específicas por classe, incluindo Precisão, Sensibilidade (\textit{Recall}), F1-Score e Especificidade.
+
+Para validar estatisticamente a comparação, aplica-se um desenho experimental baseado na técnica de Sementes Aleatórias Comuns (\textit{Common Random Numbers} - CRN). Neste método, a $i$-ésima execução do pipeline BDA utiliza exatamente a mesma semente aleatória (\textit{seed}) — e consequentemente a mesma estratificação de dados de treino/teste — que a $i$-ésima execução do RHCB5. Esta abordagem garante que ambos os modelos sejam avaliados sob condições idênticas em cada iteração, reduzindo a variância residual atribuída à amostragem dos dados e isolando o desempenho do algoritmo como fator principal. Devido a essa dependência estrutural entre as amostras, utiliza-se a análise estatística pareada. A normalidade das diferenças ($D_i = Acc_{RHCB5,i} - Acc_{BDA,i}$) é verificada pelo teste de Shapiro-Wilk. Caso a distribuição seja normal, aplica-se o Teste T Pareado; caso contrário, utiliza-se o Teste de Postos com Sinais de Wilcoxon, adotando-se $\alpha = 0.05$.
+
+\section{Implementação e análise de resultados}
+
+Esta seção detalha os parâmetros específicos das arquiteturas implementadas e discute os resultados obtidos, confrontando as métricas quantitativas com aspectos de estabilidade, custo computacional e relevância clínica.
+
+\subsection{Ambiente de Execução}
+
+Os experimentos foram conduzidos em uma estação de trabalho equipada com processador AMD Ryzen™ 5 5600X, 32 GB de memória RAM DDR5 e uma GPU NVIDIA GeForce RTX 3070, utilizada para aceleração via CUDA.
+
+\subsection{Implementação do BDA-KNN-DNN}
+
+Este fluxo adota uma arquitetura modular clássica, iniciando pela etapa de Extração de Características. Conforme a metodologia de \citep{Yogarajan2023}, utilizou-se a Transformada Wavelet Estacionária (SWT) com a wavelet \texttt{db4} e quatro níveis de decomposição. Esse processo gera 16 sub-bandas, sobre as quais são calculadas oito características base (Valor Médio Absoluto, Desvio Padrão, Assimetria, Curtose, RMS, Atividade, Mobilidade e Complexidade) e 15 características de razão (\textit{MAVsRatio}), resultando em um vetor denso de 143 atributos por segmento.
+
+Na fase de Seleção de Características, aplica-se o Algoritmo da Libélula Binário para identificar o subconjunto ótimo de atributos. Para replicar o cenário restrito da literatura, o BDA foi configurado com uma população de \texttt{10} agentes e \texttt{100} iterações. Entretanto, a implementação estrita baseada no artigo original revelou-se inviável, pois a combinação de baixa população, alta dimensionalidade e falta de mecanismos de controle conduziu à estagnação precoce em mínimos locais ou soluções triviais. Para corrigir isso e operacionalizar o sistema, foram introduzidos pesos adaptativos dinâmicos de separação, alinhamento e coesão, além de mecanismos de inércia, ``mutação forçada'' e reinicialização de agentes estagnados, visando equilibrar a exploração e a explotação.
+
+A função de aptidão (\textit{fitness}) utilizou um classificador KNN como \textit{wrapper} de baixo custo computacional, evitando o treino custoso de uma rede neural a cada avaliação. O KNN foi configurado com $k=5$, métrica de distância de Manhattan e validado via \textit{k-fold cross-validation} de 10 \textit{folds}. Devido ao gargalo computacional gerado pelo laço evolutivo, implementou-se paralelismo na validação e pré-configuração de divisores de dados. Essas modificações permitiram a convergência do algoritmo, atingindo taxas de redução de características próximas a 85\% (média de 20,8 atributos selecionados de 143).
+
+Por fim, o classificador final (DNN) foi estruturado para receber apenas as características selecionadas pelo melhor agente do BDA. A rede é composta por três camadas densas ocultas, cada uma contendo 10 neurônios, normalização em lote (\textit{Batch Normalization}) e função de ativação sigmoide. A camada de saída utiliza \textit{softmax} para classificar as três classes alvo. O treinamento ocorreu por 250 épocas fixas e utilizando otimizador Adam. O experimento foi desenhado com múltiplas execuções independentes para garantir estabilidade estatística e mitigar a natureza estocástica da meta-heurística.
+
+\subsection{Implementação da RHCB5}
+
+A implementação da arquitetura end-to-end RHCB5 manteve estrita fidedignidade à topologia original descrita na literatura base \citep{Maggioni2024}, contudo, a transposição do domínio de ECG para EEG exigiu adaptações mandatórias. A camada de entrada foi ajustada para processar vetores de dimensão $(4096, 1)$ — em detrimento das 2.400 amostras originais — para acomodar a resolução temporal do conjunto de dados de Bonn. A rede inicia com quatro blocos convolucionais sequenciais com número crescente de filtros (512, 256, 256 e 128) e \textit{kernels} mistos de tamanho 3 e 5, intercalados por camadas de \textit{Max Pooling} e \textit{Dropout} (0.2), estrutura responsável pela extração automática de padrões morfológicos locais.
+
+Sequencialmente, as características extraídas alimentam uma camada Bidirecional LSTM (Bi-LSTM) com 256 unidades, projetada para capturar dependências temporais de longo prazo, seguida por blocos densos de 256 e 128 neurônios que culminam em uma saída softmax para classificação. Divergências metodológicas substanciais ocorreram no pré-processamento: técnicas específicas para fisiologia cardíaca (filtros Notch, suavização LOESS e deslocamento positivo) foram substituídas por um filtro Butterworth passa-baixas (corte em 40 Hz) e normalização Min-Max para o intervalo $[-1, 1]$. A justificativa reside na natureza espectral do EEG, onde a remoção de frequências acima de 40 Hz elimina ruídos musculares e a centralização dos dados otimiza a convergência da rede neural, tornando o custoso processamento LOESS desnecessário neste contexto.
+
+No tocante ao treinamento, o protocolo fixo de 60 épocas foi substituído por uma estratégia dinâmica de até 100 épocas com Early Stopping (paciência de 15). Essa adaptação visa mitigar o overfitting e garantir uma generalização superior, dada a alta variabilidade inter-sujeito inerente aos sinais cerebrais. Por fim, expandiu-se o escopo original através da integração de módulos de XAI (SHAP e Grad-CAM) para validar se as ativações da rede correspondem a eventos neurofisiológicos reais ou artefatos.
+
+\subsection{Análise de Resultados}
+\todo[inline]{Crei que aqui seria melhor um texto meio e desloca a Tabela para a primeira subseção. Ajusta a Tabela. de repente, coloca as colunas em linhas}
+A análise baseia-se nos dados agregados das 30 execuções independentes e pareadas. A \autoref{tab:estatisticas_descritivas} apresenta o resumo estatístico das principais métricas, expondo uma divergência significativa de desempenho e confiabilidade entre as abordagens.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Estatística Descritiva dos Resultados (N=30 Execuções)}
+    \label{tab:estatisticas_descritivas}
+    \begin{tabular}{lcccc}
+        \toprule
+        \textbf{Métrica} & \textbf{Modelo} & \textbf{Média ($\pm$ DP)} & \textbf{Mediana} & \textbf{Mínimo} & \textbf{Melhor Caso} \\
+        \midrule
+        Acurácia & BDA-KNN-DNN & $0.7926 \pm 0.1413$ & 0.8222 & 0.4444 & 0.9556 \\
+                 & RHCB5   & $0.9037 \pm 0.0599$ & 0.9111 & 0.7111 & 1.0000 \\
+        \midrule
+        F1-Macro & BDA-KNN-DNN & $0.7809 \pm 0.1630$ & 0.8208 & 0.3542 & 0.9555 \\
+                 & RHCB5   & $0.9024 \pm 0.0631$ & 0.9113 & 0.6864 & 1.0000 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\todo[inline]{Comentários após a Tabela}
+
+\subsubsection{Eficiência, Estabilidade e Viabilidade Clínica}
+
+A análise comparativa revela que o custo computacional adicional da proposta \textbf{RHCB5} é marginal durante o treinamento, com tempos medianos de execução muito próximos aos do \textit{pipeline} BDA ($41,74$s contra $40,19$s, respectivamente). Contudo, esse pequeno investimento de tempo é amplamente justificado pelo ganho de desempenho: a RHCB5 obteve um aumento superior a 11 pontos percentuais na acurácia média e demonstrou robustez significativamente maior.
+
+Enquanto o BDA-KNN-DNN apresentou alta instabilidade — com desvio padrão de $\approx 0,14$ e acurácia mínima de $44,44\%$ (próxima ao acaso para três classes), sugerindo forte sensibilidade às condições iniciais e convergência para mínimos locais —, a RHCB5 manteve-se consistente, com desvio padrão reduzido ($\approx 0,06$) e $75\%$ das execuções superando $88,8\%$ de acurácia.
+
+Sob a ótica de implementação em hardware, há um contraponto: o modelo final do BDA (uma MLP simples com $\approx 20$ entradas) é mais eficiente em termos de FLOPS e memória para inferência em dispositivos embarcados do que a arquitetura RHCB5, que demanda o processamento de camadas convolucionais e recorrentes.Entretanto, para a aplicação médica crítica em questão, a segurança clínica prevalece sobre a economia de recursos de inferência. A análise das matrizes de confusão expõe que o BDA-KNN-DNN falha gravemente ao classificar $15,78\%$ dos segmentos de crise (Ictal) como normais. A RHCB5 reduz essa taxa crítica para $9,11\%$, sendo que seu principal modo de falha ocorre na confusão entre estados Ictal e Interictal — um erro de menor gravidade do que o não diagnóstico de uma convulsão ativa.
+
+\subsubsection{Validação Estatística}
+
+A análise de significância confirmou a superioridade da abordagem \textit{end-to-end}. O teste de normalidade de Shapiro-Wilk indicou que as diferenças de desempenho ($D = Acc_{RHCB5} - Acc_{BDA}$) não seguiram uma distribuição normal ($p = 0.035$). Consequentemente, aplicou-se o teste não-paramétrico de \textbf{Wilcoxon Signed-Rank}.
+
+O teste resultou em um $p\text{-valor} = 0.00084$ ($p < 0.001$), permitindo rejeitar a hipótese nula com alta confiança. Pode-se afirmar estatisticamente que a RHCB5 supera o desempenho do pipeline BDA-KNN-DNN neste conjunto de dados, não sendo a diferença fruto do acaso.
+
+\subsubsection{Interpretabilidade (XAI)}
+
+Para elucidar os mecanismos de decisão e garantir uma comparação justa entre abordagens, foram usadas técnicas de Inteligência Artificial Explicável (XAI). A escolha das ferramentas de interpretabilidade respeitou as restrições arquiteturais de cada modelo. O SHAP (\textit{SHapley Additive exPlanations}) é agnóstico ao modelo, permitindo quantificar a contribuição de qualquer entrada (atributo tabular ou ponto no sinal temporal), enquanto o Grad-CAM (\textit{Gradient-weighted Class Activation Mapping}) requer camadas convolucionais que preservem a estrutura espacial ou temporal para gerar mapas de calor.
+
+Assim, o Grad-CAM foi aplicado apenas à RHCB5, cuja arquitetura com camadas \texttt{Conv1D} mantém a dimensão temporal, permitindo localizar padrões morfológicos. Já no pipeline BDA-KNN-DNN, o uso do Grad-CAM é inviável, pois a extração de características por SWT converte o sinal temporal em um vetor tabular de estatísticas agregadas (como média e entropia), eliminando a dimensão temporal necessária ao cálculo de gradientes espaciais.
+
+No BDA-KNN-DNN, a análise SHAP complementou a avaliação da frequência de seleção de atributos. O algoritmo convergiu para uma média de 20,8 características (de 143), confirmando a redução de dimensionalidade relatada na literatura ($\approx 85\%$). As características priorizadas incluíram métricas de energia em sub-bandas específicas (alta frequência), em concordância com o conhecimento clínico. Porém, a análise das 30 execuções mostrou dispersão na escolha dos atributos, indicando que a meta-heurística explora correlações estatísticas dependentes da partição de treino, em vez de convergir para um conjunto fixo de biomarcadores.
+
+Na RHCB5, o uso conjunto de SHAP e Grad-CAM sobre sinais brutos validou o aprendizado \textit{end-to-end}. As visualizações mostraram que a rede foca autonomamente em regiões com mudanças abruptas de amplitude e morfologias típicas de complexos espícula-onda, evidenciando a captura de padrões neurofisiológicos reais associados à epilepsia, e não de artefatos ou ruído, dispensando engenharia explícita de características.
+
+\section{Considerações Finais}
+
+Este trabalho apresentou uma análise comparativa \st{rigorosa} entre duas filosofias predominantes para a detecção de epilepsia em sinais de EEG: o \textit{pipeline} clássico otimizado (BDA-KNN-DNN) e a abordagem de aprendizado profundo integrada (RHCB5). Através de 30 execuções pareadas, foi possível avaliar não apenas a acurácia máxima, mas a estabilidade e a consistência de cada método.
+\todo[inline]{No seu resumo invertido creio que tem mais coisas, por exemplo a fundamentação teórica, os trabalhos relacionados ...}
+
+Os resultados evidenciaram que, embora o BDA-KNN-DNN seja capaz de atingir alta performance (pico de 95,5\%), ele sofre de alta variabilidade ($\sigma \approx 14\%$), tornando-o menos confiável para aplicações críticas sem mecanismos de reinicialização robustos. A abordagem RHCB5, por sua vez, demonstrou superioridade estatística ($p < 0.001$) e robustez ($\sigma \approx 6\%$), atingindo até 100\% de acurácia em suas melhores execuções e mantendo a consistência na diferenciação das classes mais complexas (Interictal).
+
+Conclui-se que a escolha entre \textit{pipeline} e \textit{end-to-end} depende do contexto de aplicação: cenários que exigem explicação clínica detalhada e ambientes com restrições computacionais beneficiam-se do BDA-KNN-DNN (devido à seleção esparsa de características), enquanto aplicações de triagem massiva ou monitoramento contínuo que priorizam a minimização de erros se beneficiam da robustez da RHCB5.
+\todo[inline]{Trabalhos futuros}
+
+\bibliography{references}
+\end{document}
