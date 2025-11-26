@@ -35,14 +35,8 @@ E incorpora a arquitetura RHCB5 proposta por:
 
 #### Extração de Características SWT
 * **Transformada Wavelet**: Stationary Wavelet Transform (SWT) com wavelet 'db4' (Daubechies 4), nível de decomposição 4
-* **Sub-bandas**: 5 componentes por sinal:
-  - cA4: Aproximação nível 4 (0-5.86 Hz)
-  - cD4: Detalhe nível 4 (5.86-11.72 Hz)
-  - cD3: Detalhe nível 3 (11.72-23.44 Hz)
-  - cD2: Detalhe nível 2 (23.44-46.88 Hz)
-  - cD1: Detalhe nível 1 (46.88-93.75 Hz)
-
-* **Características Estatísticas (9 por sub-banda)**:
+* **Sub-bandas**: 16 componentes por sinal (aproximação e detalhes de 4 níveis)
+* **Características Estatísticas (8 por sub-banda)**:
   1. **MAV (Mean Absolute Value)**: $\frac{1}{N} \sum_{i=1}^{N} |x_i|$ - Energia média do sinal
   2. **StdDev (Standard Deviation)**: $\sqrt{\frac{1}{N-1} \sum_{i=1}^{N} (x_i - \bar{x})^2}$ - Variabilidade
   3. **Skewness**: $\frac{\frac{1}{N} \sum_{i=1}^{N} (x_i - \bar{x})^3}{\left(\frac{1}{N} \sum_{i=1}^{N} (x_i - \bar{x})^2\right)^{3/2}}$ - Assimetria da distribuição
@@ -51,13 +45,14 @@ E incorpora a arquitetura RHCB5 proposta por:
   6. **Activity (Hjorth)**: $\frac{1}{N} \sum_{i=1}^{N} x_i^2$ - Variância do sinal no tempo
   7. **Mobility (Hjorth)**: $\sqrt{\frac{\text{Activity}(\frac{dx}{dt})}{\text{Activity}(x)}}$ - Mobilidade (razão entre variâncias)
   8. **Complexity (Hjorth)**: $\frac{\text{Mobility}(\frac{dx}{dt})}{\text{Mobility}(x)}$ - Complexidade (normalizada)
-  9. **MAV Ratio**: $\frac{\text{MAV}(cD_i)}{\text{MAV}(cA4)}$ - Razão relativa à banda de baixa frequência
 
-**Total**: 45 características (5 sub-bandas × 9 features)
+* **Características Adicionais**: 15 razões MAV entre sub-bandas
+
+**Total**: 143 características (16 sub-bandas × 8 features + 15 razões)
 
 #### Seleção de Características com BDA
 * **Algoritmo**: Binary Dragonfly Algorithm (BDA) - meta-heurística bio-inspirada
-* **Codificação**: Vetor binário de 45 dimensões (1 = feature selecionada, 0 = não selecionada)
+* **Codificação**: Vetor binário de 143 dimensões (1 = feature selecionada, 0 = não selecionada)
 * **Função de Fitness**: $Fitness = \alpha \cdot \text{ErrorRate} + \beta \cdot \frac{\text{NumFeaturesSel}}{\text{TotalFeatures}}$
   - $\alpha = 0.99$, $\beta = 0.01$
   - ErrorRate: taxa de erro da DNN de validação (1 - accuracy)
@@ -79,19 +74,23 @@ E incorpora a arquitetura RHCB5 proposta por:
 #### Arquitetura Detalhada
 ```
 Input: (4096, 1) - Sinal EEG pré-processado
-├── Conv1D Blocks: Extração de features locais
-│   ├── Conv1D (activation='relu')
-│   ├── BatchNormalization
-│   ├── MaxPooling1D
-│   └── Dropout
-├── Bi-LSTM: Modelagem temporal bidirecional
-│   ├── Bi-LSTM (return_sequences=True)
-│   ├── Dropout
-│   └── Bi-LSTM (return_sequences=False)
-├── Dense Layers: Classificação
-│   ├── Dense (activation='relu')
-│   ├── Dropout
-│   └── Dense (3, activation='softmax')
+├── Conv1D (512 filtros, kernel=3, relu, padding='same')
+├── MaxPooling1D (pool_size=2)
+├── Dropout (0.2)
+├── Conv1D (256 filtros, kernel=3, relu, padding='same')
+├── MaxPooling1D (pool_size=2)
+├── Dropout (0.2)
+├── Conv1D (256 filtros, kernel=3, relu, padding='same')
+├── MaxPooling1D (pool_size=2)
+├── Dropout (0.2)
+├── Conv1D (128 filtros, kernel=3, relu, padding='same')
+├── MaxPooling1D (pool_size=2)
+├── Dropout (0.2)
+├── Bi-LSTM (256 unidades, return_sequences=False)
+├── Dense (256 neurônios, relu)
+├── Dropout (0.4)
+├── Dense (128 neurônios, relu)
+├── Dense (3 neurônios, softmax)
 Output: Probabilidades para [Normal, Interictal, Ictal]
 ```
 
@@ -99,9 +98,9 @@ Output: Probabilidades para [Normal, Interictal, Ictal]
 * **Otimização**: Adam (lr=0.001, β1=0.9, β2=0.999)
 * **Loss**: Sparse Categorical Crossentropy
 * **Métricas**: Accuracy, Precision, Recall, F1-Score
-* **Regularização**: Early Stopping (monitor='val_loss', patience=30, restore_best_weights=True)
-* **Batch Size**: 16
-* **Epochs**: 250 (máximo, com early stopping)
+* **Regularização**: Early Stopping (monitor='val_loss', patience=15, restore_best_weights=True)
+* **Batch Size**: 32
+* **Epochs**: 100 (máximo, com early stopping)
 
 #### Análise de Interpretabilidade
 * **Grad-CAM**: Visualização de regiões salientes no sinal de entrada
@@ -241,11 +240,10 @@ def build_rhcb5_model(input_shape, num_classes):
 ```
 epilepsy_detection_project/
 ├── data/                          # Dados de entrada
-│   ├── Bonn/                      # Dataset principal
-│   │   ├── A/                     # 100 arquivos .txt (EEG Normal)
-│   │   ├── D/                     # 100 arquivos .txt (EEG Interictal)
-│   │   └── E/                     # 100 arquivos .txt (EEG Ictal)
-│   └── Siena/                     # Dataset alternativo (não utilizado)
+│   └── Bonn/                      # Dataset principal
+│       ├── A/                     # 100 arquivos .txt (EEG Normal)
+│       ├── D/                     # 100 arquivos .txt (EEG Interictal)
+│       └── E/                     # 100 arquivos .txt (EEG Ictal)
 ├── pipeline/                      # Núcleo da implementação
 │   ├── main.py                    # Orquestrador principal (11k+ linhas)
 │   │   ├── Função main(): Loop de NUM_RUNS runs por pipeline
@@ -439,7 +437,7 @@ Orquestrador principal que:
 
 ### `pipeline/pipeline_bda_dnn.py`
 Implementa o pipeline baseado em características:
-- Extração de 143 features via SWT (16 sub-bandas × 8 características).
+- Extração de 143 features via SWT (16 sub-bandas × 8 características + 15 razões).
 - Otimização com Binary Dragonfly Algorithm (BDA) para seleção de features.
 - Treinamento de DNN com features selecionadas.
 - Análise SHAP para interpretabilidade.
@@ -468,7 +466,7 @@ Implementações standalone/legadas dos pipelines individuais. Usadas principalm
 
 #### Etapas:
 1. **Carregamento e Pré-processamento**: Dados BONN (A/D/E) → Filtro Butterworth (40Hz) → Normalização Min-Max.
-2. **Extração de Características**: SWT com wavelet 'db4' nível 4 → 5 sub-bandas → 9 features cada (MAV, StdDev, Skewness, Kurtosis, RMS, Activity, Mobility, Complexity, MAV Ratio) → 45 features totais.
+2. **Extração de Características**: SWT com wavelet 'db4' nível 4 → 16 sub-bandas → 8 features cada + 15 razões MAV → 143 features totais.
 3. **Seleção de Features**: BDA otimiza subconjunto de features (fitness = α×erro + β×(features_sel/total_features)).
 4. **Classificação**: DNN MLP (3 camadas ocultas, 10 neurônios sigmoid) treinada com features selecionadas.
 5. **Avaliação**: Métricas no conjunto de teste + análise SHAP.
@@ -611,7 +609,6 @@ run_seeds = [seed_generator.randint(0, 100000) for _ in range(NUM_RUNS)]
 - **Transfer Learning**: Fine-tuning com outros datasets
 
 #### Validações Adicionais
-- **Cross-dataset Validation**: Teste com CHB-MIT, Siena, TUH
 - **Clinical Validation**: Comparação com anotação médica
 - **Real-time Testing**: Implementação em edge devices
 - **Longitudinal Studies**: Performance ao longo do tempo
@@ -668,11 +665,6 @@ run_seeds = [seed_generator.randint(0, 100000) for _ in range(NUM_RUNS)]
 #### Bonn EEG Dataset
 - **Andrzejak et al. (2001)**: "Indications of nonlinear deterministic and finite-dimensional structures in time series of brain electrical activity"
 - **Características**: 5 sets (A-E), 100 segmentos cada, 4097 pontos, 173.61 Hz
-
-#### Outros Datasets
-- **CHB-MIT**: Database de crises pediátricas (Boston Children's Hospital)
-- **TUH EEG**: Corpus massivo da Temple University Hospital
-- **Siena**: Dataset italiano com crises noturnas
 
 ### Bibliotecas e Frameworks
 
@@ -924,4 +916,4 @@ Este projeto está sob licença MIT. Ver `LICENSE` para detalhes.
 
 ---
 
-*Última atualização: Dezembro 2024*
+*Última atualização: Novembro 2025*
