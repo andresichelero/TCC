@@ -958,7 +958,7 @@ Embora o desenho experimental tenha sido rigoroso, algumas limitações devem se
 
 ## Contato e Contribuições
 
-Este projeto faz parte do Trabalho Final de Curso em Ciência da Computação.
+Este projeto faz parte do Trabalho de Conclusão de Curso em Ciência da Computação.
 
 **Autor:** André Gasoli Sichelero  
 **Email:** 136235@upf.br  
