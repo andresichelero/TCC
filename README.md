@@ -1,28 +1,41 @@
 [To read in English, click here](#english-version)
 
-# Estratégias Computacionais para Detecção de Epilepsia em EEG: Pipeline-Based versus End-to-End Approaches
+# Estratégias Computacionais para Detecção de Epilepsia em EEG: Abordagem em Pipeline versus End-to-End
+
+**Trabalho Final de Curso (TCC) - Ciência da Computação**  
+**Universidade de Passo Fundo - Dezembro 2025**  
+**Autor:** André Gasoli Sichelero  
+**Orientador:** Prof. Marcelo Trindade Rebonatto
+
+---
 
 ## Contexto e Importância
 
-A epilepsia é um distúrbio neurológico que afeta aproximadamente 50 milhões de pessoas worldwide, caracterizado por crises epilépticas recorrentes. A Eletroencefalografia (EEG) é a técnica padrão-ouro para diagnóstico e monitoramento de epilepsia, capturando a atividade elétrica cerebral através de eletrodos posicionados no couro cabeludo.
+A epilepsia é um distúrbio neurológico que afeta aproximadamente 50 milhões de pessoas em todo o mundo, caracterizado por crises epilépticas recorrentes. A Eletroencefalografia (EEG) é a técnica padrão-ouro para diagnóstico e monitoramento de epilepsia, capturando a atividade elétrica cerebral através de eletrodos posicionados no couro cabeludo.
 
 **Desafio Principal**: A detecção automática de crises epilépticas em sinais de EEG é crucial para:
-- Diagnóstico precoce e preciso
-- Monitoramento contínuo de pacientes
-- Redução de falsos positivos em sistemas de alerta
-- Suporte a decisões clínicas baseadas em dados
+- Diagnóstico precoce e preciso de epilepsia do lobo temporal
+- Monitoramento contínuo de pacientes com redução de falsos positivos
+- Minimização da "fadiga de alarme" em ambientes clínicos
+- Suporte a decisões clínicas baseadas em dados com alta confiabilidade
 
-**Abordagens Tradicionais vs Modernas**:
-- **Pipeline-Based**: Seguindo o paradigma clássico de Machine Learning (extração manual de features + classificação)
-- **End-to-End**: Aproveitando Deep Learning para aprender features automaticamente dos dados brutos
+**Problema de Pesquisa**: Apesar da vasta produção acadêmica, observa-se uma carência crítica de estudos que realizem comparação direta e controlada entre paradigmas de pipeline e end-to-end sob **as mesmas condições experimentais**, com análise rigorosa da estabilidade estocástica e da robustez estatística.
 
-Este projeto compara essas duas abordagens usando o dataset público da Universidade de Bonn, estabelecendo um benchmark para futuras pesquisas em detecção de epilepsia baseada em EEG.
+## Contribuição Principal deste Trabalho
 
-Este trabalho é inspirado no artigo:
-* Yogarajan, G., Alsubaie, N., Rajasekaran, G. et al. EEG-based epileptic seizure detection using binary dragonfly algorithm and deep neural network. *Sci Rep* **13**, 17710 (2023). [https://doi.org/10.1038/s41598-023-44318-w](https://doi.org/10.1038/s41598-023-44318-w]
+Este projeto conduz uma **análise comparativa rigorosa e pareada** entre:
+- **Pipeline clássico otimizado**: Algoritmo da Libélula Binário (BDA) + K-vizinhos próximos (KNN) + Rede Neural Profunda (DNN)
+- **Arquitetura end-to-end do estado da arte**: Rede Híbrida Convolucional Bidirecional (RHCB5)
 
-E incorpora a arquitetura RHCB5 proposta por:
-* Maggioni, A. et al. (2023/2024) - Rede Híbrida Convolucional Bidirecional para classificação de EEG.
+Utilizando **Sementes Aleatórias Comuns (CRN - Common Random Numbers)** para garantir que ambos os modelos sejam avaliados sob condições idênticas, isolando o desempenho do algoritmo como fator principal.
+
+### Referências Teóricas
+
+**Inspirado em:**
+* Yogarajan, G., Alsubaie, N., Rajasekaran, G. et al. EEG-based epileptic seizure detection using binary dragonfly algorithm and deep neural network. *Sci Rep* **13**, 17710 (2023). [https://doi.org/10.1038/s41598-023-44318-w](https://doi.org/10.1038/s41598-023-44318-w)
+
+**Arquitetura RHCB5:**
+* Maggioni, A. et al. (2023/2024) - Rede Híbrida Convolucional Bidirecional originalmente validada para eletrocardiogramas (ECG), aqui testada para epilepsia em EEG.
 
 ## Funcionalidades
 
@@ -381,34 +394,39 @@ SAVE_PLOTS_PER_RUN = True  # Salva plots individuais
 
 ## Uso
 
-O script principal `pipeline/main.py` orquestra a comparação completa entre os dois pipelines.
+O script principal `pipeline/main.py` orquestra a comparação pareada completa entre os dois pipelines usando a técnica de Sementes Aleatórias Comuns (CRN).
 
 ### Execução Básica
 
-1.  **Executar a Comparação Completa:**
+1.  **Executar a Comparação Pareada Completa:**
     Certifique-se de que o ambiente virtual está ativado e os dados estão em `data/Bonn/`.
     ```bash
     cd pipeline
     python main.py
     ```
 
-2.  **Fluxo de Execução:**
+2.  **Fluxo de Execução (Pareado com CRN):**
     * Carrega e pré-processa os dados uma vez.
-    * Executa NUM_RUNS runs do pipeline BDA+DNN com seeds aleatórias.
-    * Executa NUM_RUNS runs do pipeline RHCB5 com as mesmas seeds.
-    * Para o melhor run de cada pipeline, executa análise XAI/SHAP (se habilitado).
-    * Compila estatísticas: média, mediana, desvio padrão, IQR, skewness, kurtosis.
-    * Realiza testes estatísticos: Shapiro-Wilk, Wilcoxon, T-test pareado, Cohen's d.
-    * Calcula intervalos de confiança via bootstrap.
-    * Gera plots: boxplots, scatter plots, matrizes de confusão agregadas, heatmaps.
+    * Gera 30 sementes aleatórias compartilhadas (CRN).
+    * **Para cada uma das 30 sementes**:
+      - Executa BDA+DNN com a mesma divisão de dados
+      - Executa RHCB5 com a mesma divisão de dados
+    * Identifica os melhores runs (excluindo outliers) e executa análise XAI.
+    * Compila estatísticas pareadas: média, mediana, desvio padrão, IQR.
+    * Realiza testes estatísticos pareados: Shapiro-Wilk, T-test pareado, Wilcoxon.
+    * Calcula tamanho do efeito (Cohen's d) e intervalos de confiança (95%).
+    * Gera plots: boxplots comparativos, matrizes de confusão agregadas, análise de estabilidade.
     * Salva todos os resultados em `pipeline/results/comparison_run_YYYY-MM-DD_HH-MM-SS/`.
 
 3.  **Configurações Principais:**
+    Edite `pipeline/main.py` para ajustar:
+    * `NUM_RUNS = 30`: Número de execuções pareadas.
+    
     Edite `pipeline/pipeline_utils.py` para ajustar:
-    * `NUM_RUNS = 30`: Número de execuções por pipeline.
-    * `USE_XAI = True`: Habilitar análise SHAP/Grad-CAM.
-    * `USE_GPU = True`: Usar GPU se disponível.
-    * Parâmetros de pré-processamento: `FS`, `HIGHCUT_HZ`, `FILTER_ORDER`.
+    * `USE_XAI = True`: Habilitar análise SHAP/Grad-CAM (mais lento, ~30% overhead).
+    * `USE_GPU = True`: Usar GPU se disponível (recomendado para RHCB5).
+    * `VERBOSE_LEVEL = 1`: Nível de detalhamento (0=silencioso, 1=básico, 2=detalhado).
+    * Parâmetros de pré-processamento: `FS=173.61`, `HIGHCUT_HZ=40`, `FILTER_ORDER=4`.
 
 ### Execução Individual de Pipelines
 
@@ -542,82 +560,61 @@ Após execução completa (`python pipeline/main.py`):
 
 ### Design do Experimento
 
-#### Questão de Pesquisa
-"Qual abordagem é mais eficaz para detecção de crises epilépticas em EEG: pipeline tradicional com extração manual de features e seleção otimizada, ou aprendizado end-to-end com redes neurais profundas?"
+#### Questão de Pesquisa Principal
+"Qual abordagem oferece maior **confiabilidade e robustez** para detecção de crises epilépticas em EEG: um pipeline otimizado com feature engineering explícito, ou uma arquitetura end-to-end integrada?"
 
-#### Hipóteses
-- **H1**: O pipeline BDA+DNN apresenta melhor interpretabilidade devido à seleção explícita de features.
-- **H2**: O RHCB5 apresenta melhor performance devido à capacidade de aprender features automaticamente.
-- **H3**: Não há diferença estatisticamente significativa entre as abordagens.
+#### Metodologia de Sementes Aleatórias Comuns (CRN)
 
-#### Variáveis
-- **Independente**: Estratégia de classificação (BDA+DNN vs RHCB5)
-- **Dependente**: Acurácia, F1-score, tempo de execução, interpretabilidade
-- **Controle**: Mesmo dataset, pré-processamento, seeds aleatórias, hardware
+A contribuição metodológica principal deste trabalho é a implementação de **Sementes Aleatórias Comuns (CRN)** para comparação rigorosa:
 
-### Validação e Reprodutibilidade
+1. **Geração de 30 sementes compartilhadas**: Uma semente única é gerada para cada iteração $i$
+2. **Aplicação pareada**: Na iteração $i$:
+   - BDA+DNN usa seed $s_i$, gerando estratificação específica de treino/validação/teste
+   - RHCB5 usa seed $s_i$, gerando **exatamente a mesma estratificação**
+3. **Impacto**: Elimina vieses de amostragem e isola o desempenho do algoritmo
 
-#### Seeds Aleatórias
 ```python
-# Geração controlada de seeds
+# Geração de sementes compartilhadas
 seed_generator = np.random.RandomState(42)
 run_seeds = [seed_generator.randint(0, 100000) for _ in range(NUM_RUNS)]
+
+# Cada iteração usa a mesma semente para ambos os pipelines
+for i, seed in enumerate(run_seeds):
+    bda_results[i] = run_bda_dnn_pipeline(seed=seed)
+    rhcb5_results[i] = run_rhcb5_pipeline(seed=seed)
 ```
-- **Propósito**: Garantir reprodutibilidade enquanto testa variabilidade
-- **Número**: 30 seeds por pipeline (poder estatístico adequado)
-- **Controle**: Mesmas seeds para ambos os pipelines em cada run
 
-#### Validação Cruzada Interna
-- **BDA**: 10-fold CV para avaliação de fitness durante otimização
-- **RHCB5**: Hold-out validation (15% dos dados de treino)
+#### Hipóteses Testadas
 
-#### Métricas de Robustez
-- **Desvio Padrão**: Variabilidade entre runs
-- **Intervalos de Confiança**: Bootstrap 95% (10,000 reamostragens)
-- **Testes de Outliers**: IQR method para tempo de execução
+- **H1**: O BDA+DNN apresenta melhor interpretabilidade (características explícitas selecionadas)
+- **H2**: A RHCB5 apresenta melhor sensibilidade geral e, crítico: melhor **detecção do estado Interictal**
+- **H3**: Não há diferença significativa em ambos os métodos (nula)
 
-### Limitações e Considerações
+**Resultado**: H2 foi confirmada com significância estatística (p=0.0053). O estado Interictal é o fator crítico para viabilidade clínica, onde RHCB5 superou BDA em +15.11 p.p. no Recall.
 
-#### Limitações Técnicas
-1. **Dataset Restrito**: Apenas Bonn dataset (não generaliza para outros EEG)
-2. **Classes Desbalanceadas**: 100 amostras por classe (pode afetar generalização)
-3. **Comprimento Fixo**: Sinais de 23.6s (não testa com durações variáveis)
-4. **Single-Channel**: EEG unipolar (não explora montagens multi-canais)
+---
 
-#### Limitações Computacionais
-1. **Tempo de Execução**: ~20 horas para experimento completo
-2. **Memória**: SHAP analysis requer 16GB+ RAM
-3. **GPU Dependency**: Treinamento RHCB5 lento em CPU
+#### Limitações e Ameaças à Validade
 
-#### Limitações Metodológicas
-1. **Hiperparâmetros Fixos**: Não otimizados via grid search
-2. **Comparação Limitada**: Apenas 2 abordagens (existem outras)
-3. **Interpretabilidade**: XAI limitado a SHAP/Grad-CAM (não exhaustivo)
+**Limitações do Dataset Bonn:**
+- Segmentos **pré-selecionados e limpos** (não representa ambiente clínico contínuo)
+- Restrito a **epilepsia do lobo temporal focal** (não generaliza para crises generalizadas)
+- **Apenas 100 amostras por classe** (pequeno para deep learning moderno)
+- Single-channel EEG (não explora montagens multi-canal)
 
-#### Threats to Validity
-- **Internal Validity**: Mesmo pré-processamento garante comparabilidade justa
-- **External Validity**: Resultados específicos para Bonn dataset
-- **Construct Validity**: Métricas padrão (accuracy, F1) bem definidas
-- **Conclusion Validity**: Testes estatísticos robustos (poder adequado)
+**Validação Ecológica Necessária:**
+- Testar em registros contínuos longos (CHB-MIT dataset)
+- Implementar rejeição de artefatos em tempo real
+- Avaliar em cenários com desbalanceamento severo de classes
 
-### Extensões Futuras
+**Ameaças à Validade Mitigadas pela Metodologia:**
+- ✓ **Validade Interna**: Mesmo pré-processamento para ambos garante comparabilidade
+- ✓ **Validade Estatística**: 30 repetições com CRN fornece poder estatístico adequado
+- ✓ **Reprodutibilidade**: Sementes fixas garantem replicabilidade exata
 
-#### Melhorias Técnicas
-- **Multi-channel EEG**: Incorporar montagens 10-20
-- **Data Augmentation**: Jittering, scaling, noise injection
-- **Ensemble Methods**: Combinar predições de múltiplos modelos
-- **Transfer Learning**: Fine-tuning com outros datasets
+---
 
-#### Validações Adicionais
-- **Clinical Validation**: Comparação com anotação médica
-- **Real-time Testing**: Implementação em edge devices
-- **Longitudinal Studies**: Performance ao longo do tempo
-
-#### Análises Avançadas
-- **Ablation Studies**: Impacto de componentes individuais
-- **Sensitivity Analysis**: Robustez a hiperparâmetros
-- **Bias/Fairness**: Análise de viés entre classes/pacientes
-- **Computational Complexity**: Análise assintótica detalhada
+### Interpretabilidade: Análise XAI
 
 ## Referências Técnicas
 
@@ -700,43 +697,108 @@ run_seeds = [seed_generator.randint(0, 100000) for _ in range(NUM_RUNS)]
 - **Cohen's d**: Tamanho do efeito padronizado
 - **Bootstrap CI**: Intervalos de confiança não-paramétricos
 
-## Resultados Experimentais
+## Resultados Experimentais (30 Execuções Pareadas com CRN)
 
-### Comparação Pipeline vs End-to-End
+### Principais Descobertas
 
-#### Métricas de Performance (Bonn Dataset)
+#### Métricas Globais de Performance
 
-| Abordagem | Accuracy | Precision | Recall | F1-Score | Tempo Treino |
-|-----------|----------|-----------|--------|----------|--------------|
-| **Pipeline (BDA + DNN)** | 98.45% ± 0.32% | 98.52% ± 0.28% | 98.41% ± 0.35% | 98.46% ± 0.31% | ~45 min |
-| **End-to-End (RHCB5)** | 97.89% ± 0.41% | 97.95% ± 0.38% | 97.84% ± 0.44% | 97.89% ± 0.40% | ~120 min |
-| **Diferença Estatística** | p < 0.001* | p < 0.001* | p < 0.001* | p < 0.001* | - |
+| Métrica | BDA-DNN | RHCB5 | Diferença | p-value |
+|---------|---------|-------|-----------|---------|
+| **Acurácia** | 90.37% ± 3.66% | **93.19% ± 4.33%** | +2.82% | 0.0053* |
+| **F1-Score Macro** | 90.18% ± 3.82% | **93.14% ± 4.35%** | +2.96% | 0.0043* |
+| **Tempo Total (s)** | 58.50 (IQR 3.97) | **37.83 (IQR 10.58)** | -35.33% | - |
+| **Redução de Features** | 65-66% (média 49 atributos) | N/A | - | - |
 
-*Teste de Wilcoxon, diferença significativa (p < 0.05)
+*Teste T Pareado, diferença significativa (p < 0.05)
 
-#### Análise por Classe (Confusion Matrix)
+#### Análise por Classe: O Achado Crítico
 
-**Pipeline (BDA + DNN):**
+**Classe Interictal (D) - Desafio Clínico Principal:**
+
+| Métrica | BDA-DNN | RHCB5 | Diferença |
+|---------|---------|-------|-----------|
+| **Recall (Sensibilidade)** | 80.00% ± 10.21% | **95.11% ± 4.93%** | **+15.11 p.p.** |
+| **Especificidade** | **96.22% ± 3.58%** | 95.22% ± 5.16% | -1.00% |
+| **Precisão** | **91.99% ± 7.24%** | 91.64% ± 8.30% | -0.35% |
+| **F1-Score** | 85.08% ± 6.58% | **93.10% ± 5.17%** | +9.43% |
+
+**Interpretação Clínica**: A detecção de estado Interictal é o gargalo crítico para aplicação clínica. O BDA apresentou taxa de erro de **20%**, confundindo frequentemente padrões interictais com normais (9.6%) ou com crises (10.4%), causador de "fadiga de alarme". A RHCB5 resolveu este problema crítico, elevando a detecção a 95.11%.
+
+---
+
+**Classe Ictal (E) - Alta Energia:**
+
+| Métrica | BDA-DNN | RHCB5 | Diferença |
+|---------|---------|-------|-----------|
+| **Recall (Sensibilidade)** | **98.22% ± 3.47%** | 88.22% ± 9.54% | -10.00% |
+| **Especificidade** | 94.22% ± 4.63% | **98.00% ± 2.57%** | +3.78% |
+| **Precisão** | 90.11% ± 7.17% | **95.89% ± 4.97%** | +5.78% |
+| **F1-Score** | **93.78% ± 3.94%** | 91.59% ± 5.92% | -2.19% |
+
+**Interpretação**: O BDA é altamente sensível a descargas de alta energia (crises), mas ao custo de falsos alarmes. A RHCB5 oferece balanço superior entre sensibilidade e especificidade.
+
+#### Matrizes de Confusão Agregadas
+
+**BDA-DNN (30 execuções agregadas):**
 ```
-Predito →  A   B   C   D   E
-Real ↓
-A          98  1   0   1   0
-B          1   97  1   1   0
-C          0   1   98  0   1
-D          1   0   0   98  1
-E          0   1   1   1   97
+             Predito Normal  Interictal  Ictal
+Real Normal          1440         108       0
+     Interictal       288         2400     312    ← 20% de erro crítico
+     Ictal              0          59     2941
 ```
 
-**End-to-End (RHCB5):**
+**RHCB5 (30 execuções agregadas):**
 ```
-Predito →  A   B   C   D   E
-Real ↓
-A          97  2   0   1   0
-B          2   96  1   1   0
-C          0   1   97  1   1
-D          1   1   1   96  1
-E          0   1   1   1   97
+             Predito Normal  Interictal  Ictal
+Real Normal          1425         123       0
+     Interictal        81         2857      162   ← Dramaticamente melhorado
+     Ictal             27          93      2880
 ```
+
+---
+
+### Trade-off: Pipeline vs End-to-End
+
+| Aspecto | BDA-DNN | RHCB5 |
+|---------|---------|-------|
+| **Interpretabilidade** | Alta (features explícitas) | Baixa (caixa-preta) |
+| **Estabilidade Estatística** | ⚠️ Baixa (CV=61% na seleção) | ✓ Alta (consistente) |
+| **Confiabilidade Clínica** | ⚠️ Problemática (20% erro Interictal) | ✓ Superior (robusta) |
+| **Tempo de Inferência** | Mais rápido | Mais lento |
+| **Tamanho do Modelo** | Pequeno (MLP simples) | Grande (CNN-BiLSTM) |
+| **Reprodutibilidade** | Difícil (BDA instável) | ✓ Excelente |
+
+---
+
+### Interpretabilidade (XAI Analysis)
+
+#### BDA-KNN-DNN: Análise de Instabilidade via SHAP
+
+**Descoberta Crítica: Convergência Não-Canônica**
+
+O BDA selecionou em média **49.2 atributos de 143** (redução de 65-66%), mas com **alta variabilidade**:
+- Coeficiente de Variação: 61% (selecionou entre 19 e 79 atributos)
+- Nenhuma feature foi selecionada em >60% das 30 execuções
+- Distribuição quase uniforme de frequências de seleção
+
+**Interpretação**: O algoritmo não convergiu para um subconjunto **canônico de biomarcadores robustos**, mas sim para correlações estatísticas locais e ruído específico de cada partição (**overfitting**).
+
+Embora o BDA seja um otimizador matemático eficaz, falhou como **descobridor de conhecimento clínico estável**. A "caixa branca" suposta do pipeline revelou-se instável e dependente da inicialização.
+
+#### RHCB5: Análise de Grad-CAM
+
+**Validação Visual de Aprendizado**
+
+O Grad-CAM revelou que a rede desenvolveu detectores robustos de características:
+
+1. **Classe Normal**: Ativação difusa para monitoramento de estabilidade global
+2. **Classe Interictal**: **Focos intensos e localizados** alinhados temporalmente com espículas e transientes breves (20-70 ms) — precisamente o padrão clínico crítico
+3. **Classe Ictal**: Ativação massiva e contínua rastreando a evolução energética da crise
+
+**Conclusão**: A RHCB5 capturou automaticamente as sutilezas morfológicas que o BDA não conseguiu isolar com features estáticas baseadas em wavelet. Isso explica a superioridade de +15.11 p.p. no Recall da classe Interictal.
+
+---
 
 ### Análise Estatística Detalhada
 
@@ -754,7 +816,8 @@ E          0   1   1   1   97
 
 #### Tamanho do Efeito
 - Cohen's d = 1.45 (efeito grande)
-- Interpretação: Diferença prática substancial entre abordagens
+- Interpretação: Diferença prática substancial e clinicamente significativa entre abordagens
+- O teste de normalidade Shapiro-Wilk confirmou distribuição normal (W=0.955, p=0.241)
 
 ### Eficiência Computacional
 
@@ -817,29 +880,61 @@ E          0   1   1   1   97
 
 | Método | Dataset | Accuracy | Referência |
 |--------|---------|----------|------------|
-| **BDA + DNN (Nosso)** | Bonn | 98.45% | - |
-| **RHCB5 (Nosso)** | Bonn | 97.89% | - |
+## Comparação com Estado-da-Arte
+
+| Método | Dataset | Accuracy | Referência |
+|--------|---------|----------|------------|
+| **BDA + DNN (Este trabalho)** | Bonn | 90.37% | - |
+| **RHCB5 (Este trabalho)** | Bonn | 93.19% | - |
 | CNN-LSTM (Shoeibi, 2021) | Bonn | 96.73% | Epilepsia |
 | Wavelet + SVM (Subasi, 2007) | Bonn | 95.18% | Expert Systems |
 | DWT + ANN (Acharya, 2013) | Bonn | 94.67% | Information Sciences |
 
-### Discussão dos Resultados
+---
 
-#### Pontos Fortes
-1. **Superioridade Pipeline**: Melhor performance com menor complexidade computacional
-2. **Seleção de Features Eficiente**: BDA identifica features biologicamente relevantes
-3. **Robustez Estatística**: Diferenças significativas e intervalos de confiança estreitos
-4. **Interpretabilidade**: SHAP revela mecanismos de decisão
+## Considerações Finais
 
-#### Limitações Identificadas
-1. **Tempo de Treino**: Pipeline requer duas fases (seleção + classificação)
-2. **Dependência de Features**: Performance limitada pela qualidade da extração
-3. **Generalização**: Resultados específicos para Bonn dataset
+Este trabalho apresentou uma análise comparativa sistemática entre duas filosofias predominantes para a detecção de epilepsia em sinais de EEG: o *pipeline* clássico otimizado (BDA-KNN-DNN) e a abordagem de aprendizado profundo integrada (RHCB5). Através de repetições pareadas com controle de aleatoriedade, foi possível avaliar não apenas a acurácia máxima, mas também a estabilidade e a consistência de cada método.
 
-#### Implicações Práticas
-- **Cenário Clínico**: Pipeline preferível para aplicações em tempo real
-- **Pesquisa**: End-to-end permite exploração de representações automáticas
-- **Trade-off**: Performance vs interpretabilidade vs eficiência
+Um aspecto crítico observado refere-se à reprodutibilidade da abordagem em *pipeline*. A implementação do BDA exigiu um esforço substancial de inferência técnica, visto que trabalhos anteriores apresentaram uma parametrização inviável na prática e omitiram configurações do classificador wrapper (KNN), forçando a adoção de premissas baseadas na literatura fundamental. Em contraste, a arquitetura RHCB5 demonstrou alta fidelidade de reprodução: sua descrição topológica clara permitiu a transposição direta do domínio original (ECG) para EEG com modificações mínimas. Essa facilidade, aliada à superioridade estatística comprovada, reforça a viabilidade da abordagem *end-to-end* como artefato científico metodologicamente mais reprodutível e acessível para adoção clínica.
+
+**Conclusão**: A escolha entre *pipeline* e *end-to-end* depende do contexto de aplicação. Cenários que exigem explicação clínica detalhada e ambientes com severas restrições de memória podem se beneficiar do BDA-KNN-DNN, desde que tolerem maior variância. Entretanto, **para triagem massiva ou monitoramento contínuo, onde a segurança do paciente e a minimização de falsos negativos são prioritárias, a RHCB5 apresenta-se como uma solução mais segura e eficaz**.
+
+### Agenda de Pesquisa Futura
+
+Como trabalhos futuros, propõe-se uma agenda estruturada em três eixos:
+
+**Primeiro Eixo - Validação Ecológica**: Validação em registros contínuos de longa duração (CHB-MIT) mediante segmentação com janelas deslizantes, *data augmentation* via jittering temporal e adição de ruído gaussiano, balanceamento de classes via SMOTE temporal, e rejeição automática de artefatos por limiarização adaptativa.
+
+**Segundo Eixo - Refinamento Metodológico**: No *pipeline*, substituir o *wrapper* KNN por filtragem via Mutual Information e adotar classificadores XGBoost com interpretabilidade nativa; na RHCB5, integrar Self-Attention nas camadas convolucionais, Temporal Attention entre Bi-LSTM e camadas densas, e aplicar Transfer Learning com pré-treinamento no TUH EEG Corpus (> 60.000 registros).
+
+**Terceiro Eixo - Comparação com Arquiteturas Especializadas**: Comparação direta com EEGNet e DeepConvNet sob o mesmo protocolo pareado com CRN, validando definitivamente a hipótese de transferibilidade de domínio versus especialização arquitetural.
+
+## Contribuições Deste Estudo
+
+Este trabalho oferece quatro contribuições principais à literatura:
+
+1. **Comparação pareada rigorosa**: Análise direta e pareada entre paradigmas de *pipeline* e *end-to-end* para detecção de epilepsia sob controle experimental rigoroso.
+
+2. **Estabilidade estocástica comprovada**: Demonstração empírica de que a superioridade de acurácia da RHCB5 se sustenta através de análise de estabilidade estocástica (30 execuções com CRN).
+
+3. **Resolução do gargalo clínico**: Identificação da redução crítica da confusão entre estados Interictais e Ictais pela arquitetura híbrida, possivelmente resolvendo um dos maiores gargalos para a aplicação clínica de sistemas automáticos.
+
+4. **Evidência via XAI**: Demonstração, através de análise SHAP e Grad-CAM, de que o BDA pode convergir para biomarcadores não canônicos em alta dimensionalidade, enquanto RHCB5 desenvolve detectores de características robustos e interpretáveis.
+
+## Limitações e Ameaças à Validade
+
+Embora o desenho experimental tenha sido rigoroso, algumas limitações devem ser reconhecidas:
+
+- **Dataset pré-selecionado**: O *dataset* de Bonn, apesar de ser referência na literatura, consiste em segmentos pré-selecionados e limpos, não refletindo a complexidade de registros contínuos com artefatos encontrados em ambientes clínicos reais.
+
+- **Escopo de epilepsia**: A análise se restringe a epilepsias focais do lobo temporal; a generalização para crises generalizadas ou de início desconhecido requer validação adicional.
+
+- **Tamanho amostral**: O tamanho amostral de 300 segmentos, embora suficiente para análise comparativa, pode limitar a capacidade de capturar a variabilidade interpaciente.
+
+- **Restrições computacionais**: A RHCB5 apresenta complexidade computacional para inferência em dispositivos de borda (*edge computing*) com restrições severas de energia.
+
+- **Opacidade de modelos profundos**: Embora mitigada pelo Grad-CAM, a RHCB5 não fornece uma lista explícita de regras de decisão como o *pipeline* baseado em atributos.
 
 ---
 
@@ -917,3 +1012,269 @@ Este projeto está sob licença MIT. Ver `LICENSE` para detalhes.
 ---
 
 *Última atualização: Novembro 2025*
+
+---
+
+# English Version
+
+# Computational Strategies for Epilepsy Detection in EEG: Pipeline versus End-to-End Approaches
+
+**Final Course Project (TCC) - Computer Science**  
+**Federal University of Passo Fundo - December 2025**  
+**Author:** André Gasoli Sichelero  
+**Advisor:** Prof. Marcelo Trindade Rebonatto
+
+---
+
+## Context and Importance
+
+Epilepsy is a neurological disorder affecting approximately 50 million people worldwide, characterized by recurrent seizures. Electroencephalography (EEG) is the gold standard technique for epilepsy diagnosis and monitoring, capturing brain electrical activity through electrodes positioned on the scalp.
+
+**Main Challenge**: Automatic seizure detection in EEG signals is crucial for:
+- Early and accurate diagnosis of temporal lobe epilepsy
+- Continuous patient monitoring with reduced false positives
+- Minimization of "alarm fatigue" in clinical environments
+- Support for data-driven clinical decision-making with high reliability
+
+**Research Problem**: Despite extensive academic production, there is a critical lack of studies conducting direct and controlled comparison between pipeline and end-to-end paradigms under **identical experimental conditions**, with rigorous analysis of stochastic stability and statistical robustness.
+
+## Main Contribution of This Work
+
+This project conducts a **rigorous and paired comparative analysis** between:
+- **Classical optimized pipeline**: Binary Dragonfly Algorithm (BDA) + K-Nearest Neighbors (KNN) + Deep Neural Network (DNN)
+- **State-of-the-art end-to-end architecture**: Hybrid Bidirectional Convolutional Network (RHCB5)
+
+Using **Common Random Numbers (CRN)** to ensure both models are evaluated under identical conditions, isolating algorithm performance as the primary factor.
+
+### Theoretical References
+
+**Inspired by:**
+* Yogarajan, G., Alsubaie, N., Rajasekaran, G. et al. EEG-based epileptic seizure detection using binary dragonfly algorithm and deep neural network. *Sci Rep* **13**, 17710 (2023). [https://doi.org/10.1038/s41598-023-44318-w](https://doi.org/10.1038/s41598-023-44318-w)
+
+**RHCB5 Architecture:**
+* Maggioni, A. et al. (2023/2024) - Hybrid Bidirectional Convolutional Network originally validated for electrocardiograms (ECG), here tested for epilepsy in EEG.
+
+---
+
+## Experimental Results (30 Paired Executions with CRN)
+
+### Key Findings
+
+#### Global Performance Metrics
+
+| Metric | BDA-DNN | RHCB5 | Difference | p-value |
+|--------|---------|-------|-----------|---------|
+| **Accuracy** | 90.37% ± 3.66% | **93.19% ± 4.33%** | +2.82% | 0.0053* |
+| **F1-Score Macro** | 90.18% ± 3.82% | **93.14% ± 4.35%** | +2.96% | 0.0043* |
+| **Total Time (s)** | 58.50 (IQR 3.97) | **37.83 (IQR 10.58)** | -35.33% | - |
+| **Feature Reduction** | 65-66% (49 avg) | N/A | - | - |
+
+*Paired T-Test, statistically significant (p < 0.05)
+
+#### Analysis by Class: The Critical Finding
+
+**Interictal Class (D) - Primary Clinical Challenge:**
+
+| Metric | BDA-DNN | RHCB5 | Difference |
+|--------|---------|-------|-----------|
+| **Recall (Sensitivity)** | 80.00% ± 10.21% | **95.11% ± 4.93%** | **+15.11 p.p.** |
+| **Specificity** | **96.22% ± 3.58%** | 95.22% ± 5.16% | -1.00% |
+| **Precision** | **91.99% ± 7.24%** | 91.64% ± 8.30% | -0.35% |
+| **F1-Score** | 85.08% ± 6.58% | **93.10% ± 5.17%** | +9.43% |
+
+**Clinical Interpretation**: Interictal state detection is the critical bottleneck for clinical application. BDA showed **20% error rate**, frequently confusing interictal patterns with normal (9.6%) or with seizures (10.4%), causing "alarm fatigue". RHCB5 resolved this critical problem, achieving 95.11% detection.
+
+---
+
+**Ictal Class (E) - High Energy:**
+
+| Metric | BDA-DNN | RHCB5 | Difference |
+|--------|---------|-------|-----------|
+| **Recall (Sensitivity)** | **98.22% ± 3.47%** | 88.22% ± 9.54% | -10.00% |
+| **Specificity** | 94.22% ± 4.63% | **98.00% ± 2.57%** | +3.78% |
+| **Precision** | 90.11% ± 7.17% | **95.89% ± 4.97%** | +5.78% |
+| **F1-Score** | **93.78% ± 3.94%** | 91.59% ± 5.92% | -2.19% |
+
+**Interpretation**: BDA is highly sensitive to high-energy discharges (seizures), but at the cost of false alarms. RHCB5 offers superior balance between sensitivity and specificity.
+
+### Trade-off: Pipeline vs End-to-End
+
+| Aspect | BDA-DNN | RHCB5 |
+|--------|---------|-------|
+| **Interpretability** | High (explicit features) | Low (black-box) |
+| **Statistical Stability** | ⚠️ Low (CV=61% in selection) | ✓ High (consistent) |
+| **Clinical Reliability** | ⚠️ Problematic (20% interictal error) | ✓ Superior (robust) |
+| **Inference Time** | Faster | Slower |
+| **Model Size** | Small (simple MLP) | Large (CNN-BiLSTM) |
+| **Reproducibility** | Difficult (BDA unstable) | ✓ Excellent |
+
+---
+
+## Methodology: Common Random Numbers (CRN)
+
+### Paired Experimental Design
+
+The central pillar of this work's methodological contribution is the implementation of **Common Random Numbers (CRN)** for rigorous comparison:
+
+1. **Generation of 30 shared seeds**: One unique seed is generated for each iteration $i$
+2. **Paired application**: In iteration $i$:
+   - BDA+DNN uses seed $s_i$, generating specific train/validation/test stratification
+   - RHCB5 uses seed $s_i$, generating **exactly the same stratification**
+3. **Impact**: Eliminates sampling biases and isolates algorithm performance
+
+### Hypotheses Tested
+
+- **H1**: BDA+DNN presents better interpretability (explicitly selected features)
+- **H2**: RHCB5 presents better general sensitivity and, critically: better **interictal state detection**
+- **H3**: No significant difference between both methods (null)
+
+**Result**: H2 was confirmed with statistical significance (p=0.0053). The interictal state is the critical factor for clinical viability, where RHCB5 outperformed BDA by +15.11 p.p. in Recall.
+
+---
+
+## XAI Analysis
+
+#### BDA-KNN-DNN: Instability Analysis via SHAP
+
+**Critical Discovery: Non-Canonical Convergence**
+
+BDA selected on average **49.2 features from 143** (65-66% reduction), but with **high variability**:
+- Coefficient of Variation: 61% (in feature selection)
+- Range: 19 to 79 features selected (from 143)
+- Mean: 49.2 ± 30 features selected
+- Implication: No convergent "canonical" biomarcators
+- Conclusion: Overfitting to partition-specific correlations
+
+Although BDA is an effective mathematical optimizer, it failed as a **stable clinical knowledge discoverer**. The supposed "white box" of the pipeline proved unstable and dependent on initialization.
+
+#### RHCB5: Grad-CAM Analysis
+
+**Visual Validation of Learning**
+
+Grad-CAM revealed that the network developed robust feature detectors:
+
+1. **Normal class**: Diffuse activation for global stability monitoring
+2. **Interictal class**: **Intense and localized foci** temporally aligned with spikes and brief transients (20-70 ms) — precisely the critical clinical pattern
+3. **Ictal class**: Massive and continuous activation tracking seizure energetic evolution
+
+**Conclusion**: RHCB5 automatically captured the morphological subtleties that BDA could not isolate with static wavelet-based features. This explains the superiority of +15.11 p.p. in interictal class recall.
+
+---
+
+## Final Considerations and Clinical Guidelines
+
+### Synthesis of Findings
+
+This work presented a systematic and rigorous comparative analysis between two predominant philosophies for epilepsy detection in EEG:
+
+1. **Optimized Pipeline (BDA+DNN)**: Offers explicit interpretability through feature selection, but presents **stochastic instability** and **critical error in interictal state detection (20%)**, making reliable clinical application unfeasible.
+
+2. **End-to-End Approach (RHCB5)**: Presents **superior statistical robustness**, **resolution of the interictal bottleneck** (+15.11 p.p. improvement) and **excellent reproducibility**, consolidating itself as the most viable solution for automatic screening and continuous monitoring.
+
+### Recommendations for Clinical Application
+
+**For mass screening environments and continuous monitoring:**
+- ✓ **RHCB5 is recommended** as a clinical decision support tool
+- Justification: Robustness, generalization, and minimization of false alarms critical to patient safety
+
+**For academic research with interpretability focus:**
+- ⚠️ **BDA+DNN with caveats**: Useful for hypothesis generation, but instability must be recognized
+- Recommendation: Combine with nested cross-validation techniques to stabilize selection
+
+### Critical Mention: Scientific Reproducibility
+
+BDA implementation required significant effort of **technical inference** from fundamental literature, as the primary reference (Yogarajan et al., 2023) omitted critical parameterizations. This demonstrates the crucial importance of **rigorous hyperparameter documentation** for reproducibility.
+
+In contrast, RHCB5 allowed **direct transposition** from the original domain (ECG) to EEG, validating the hypothesis of **transferability between non-stationary biosignals**.
+
+---
+
+## Future Research Agenda
+
+### Axis 1: Ecological Validation in Continuous Data
+
+- [ ] Test on **CHB-MIT dataset** (>60 patients, 1+ hour recordings each)
+- [ ] Implement **real-time artifact rejection** (adaptive thresholding + spectral analysis)
+- [ ] Apply **data augmentation** (temporal jittering, Gaussian noise, temporal SMOTE)
+- [ ] Evaluate under **severe class imbalance** (ictal events rare in prolonged monitoring)
+
+### Axis 2: Methodological Refinement
+
+**In BDA+DNN Pipeline:**
+- [ ] Replace KNN wrapper ($O(N \times T)$) with filters via **Mutual Information** ($O(N \log N)$)
+- [ ] Adopt **XGBoost classifiers with native interpretability**
+- [ ] Implement **nested cross-validation** to stabilize feature selection
+
+**In RHCB5:**
+- [ ] Integrate **Self-Attention** in convolutional layers
+- [ ] Add **Temporal Attention** between Bi-LSTM and dense layers
+- [ ] Apply **Transfer Learning** with pre-training on TUH EEG Corpus (>60k records)
+
+### Axis 3: Complete Architectural Comparison
+
+- [ ] Direct validation with **EEGNet** and **DeepConvNet** under paired CRN protocol
+- [ ] Test hypothesis: architectural specialization vs. domain transferability
+- [ ] **Ablation studies** to identify critical components
+
+---
+
+## Study Contributions
+
+This work offers four main contributions to the literature:
+
+1. **Rigorous paired comparison**: Direct and paired analysis between pipeline and end-to-end paradigms for epilepsy detection under rigorous experimental control.
+
+2. **Proven stochastic stability**: Empirical demonstration that RHCB5's accuracy superiority is sustained through stochastic stability analysis (30 runs with CRN).
+
+3. **Resolution of clinical bottleneck**: Identification of critical reduction in confusion between Interictal and Ictal states by the hybrid architecture, possibly resolving one of the major barriers to clinical application of automatic systems.
+
+4. **Evidence via XAI**: Demonstration, through SHAP and Grad-CAM analysis, that BDA may converge to non-canonical biomarkers in high dimensionality, while RHCB5 develops robust and interpretable feature detectors.
+
+## Limitations and Threats to Validity
+
+Although the experimental design was rigorous, some limitations should be recognized:
+
+- **Pre-selected dataset**: The Bonn dataset, despite being a reference in the literature, consists of pre-selected and clean segments, not reflecting the complexity of continuous recordings with artifacts found in real clinical environments.
+
+- **Scope of epilepsy**: The analysis is restricted to temporal lobe focal epilepsy; generalization to generalized seizures or seizures of unknown onset requires additional validation.
+
+- **Sample size**: The sample size of 300 segments, while sufficient for comparative analysis, may limit the ability to capture inter-patient variability.
+
+- **Computational constraints**: RHCB5 presents computational complexity for inference on edge devices with severe energy restrictions.
+
+- **Opacity of deep models**: Although mitigated by Grad-CAM, RHCB5 does not provide an explicit list of decision rules like the attribute-based pipeline.
+
+---
+
+## Contact and Contributions
+
+This project is part of the Final Course Project in Computer Science.
+
+**Author:** André Gasoli Sichelero  
+**Email:** 136235@upf.br  
+**Advisor:** Prof. Marcelo Trindade Rebonatto  
+**Institution:** Federal University of Passo Fundo (UPF)  
+**Course:** Bachelor's in Computer Science  
+**Period:** 2024/2  
+
+### How to Contribute
+
+#### Development
+1. Fork the repository
+2. Create a branch for your feature (`git checkout -b feature/new-feature`)
+3. Commit your changes (`git commit -am 'Adds new feature'`)
+4. Push to the branch (`git push origin feature/new-feature`)
+5. Open a Pull Request
+
+#### Types of Contributions
+- **Code**: Improvements to algorithms, optimizations, new features
+- **Documentation**: Corrections, expansions, translations
+- **Tests**: New test cases, results validation
+- **Bug Reports**: Detailed issues with reproduction steps
+
+---
+
+**License:** MIT. See `LICENSE` for details.
+
+*Last update: December 2025*
+

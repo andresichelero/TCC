@@ -3,11 +3,11 @@
 Orquestrador Principal de Comparação de Pipelines
 
 Este script executa a tarefa principal:
-1. Define o número de execuções (NUM_RUNS = 50).
-2. Gera 50 seeds aleatórias únicas.
-3. Executa o pipeline BDA-DNN 50 vezes, uma para cada seed.
-4. Executa o pipeline RHCB5 50 vezes, usando AS MESMAS seeds da etapa 3.
-5. Coleta os resultados de todas as 100 execuções.
+1. Define o número de execuções (NUM_RUNS = 30).
+2. Gera 30 seeds aleatórias únicas.
+3. Executa o pipeline BDA-DNN 30 vezes, uma para cada seed.
+4. Executa o pipeline RHCB5 30 vezes, usando AS MESMAS seeds da etapa 3.
+5. Coleta os resultados de todas as 60 execuções.
 6. Compila estatísticas robustas (média, mediana, std, etc.) para cada pipeline.
 7. Gera gráficos comparativos (boxplots, matrizes de confusão agregadas).
 8. Salva todos os resultados em um diretório de comparação.
@@ -48,7 +48,7 @@ except ImportError as e:
     sys.exit(1)
 
 # --- Configurações da Comparação ---
-NUM_RUNS = 40 # Número de vezes para executar cada pipeline
+NUM_RUNS = 30 # Número de vezes para executar cada pipeline
 SAVE_PLOTS = True # Salvar plots agregados
 
 # --- Configuração de Diretórios ---
